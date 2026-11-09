@@ -23,17 +23,23 @@
   --color-warning-text: #e3b341;
   --font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
-  --header-padding: 0.75rem 1rem;
+  --header-padding: clamp(0.5rem, 1.5vw, 0.75rem) clamp(0.6rem, 2.5vw, 1.5rem);
+  --container-padding: clamp(0.6rem, 2.5vw, 1.5rem);
+  --container-max-width: 1100px;
   --col-type-width: 7.5rem;
   --col-size-width: 6.5rem;
   --col-mode-width: 7.75rem;
+  --preview-dialog-max-width: 1100px;
+  --font-size-base: clamp(0.875rem, 0.84rem + 0.15vw, 1rem);
+  --font-size-repo-title: clamp(1.1rem, 0.95rem + 0.5vw, 1.45rem);
 }
 
 html {
   scrollbar-gutter: stable;
   color-scheme: dark;
-  scroll-padding-block-start: 5.5rem;
-  scroll-padding-block-end: 7.5rem;
+  background-color: var(--color-bg);
+  scroll-padding-block-start: clamp(4.5rem, 8vh, 6rem);
+  scroll-padding-block-end: clamp(6rem, 10vh, 8.5rem);
 }
 
 body {
@@ -118,7 +124,7 @@ body.modal-open {
 .search-form {
   display: flex;
   inline-size: 100%;
-  max-inline-size: 1100px;
+  max-inline-size: var(--container-max-width);
   margin-inline: auto;
   gap: 0.5rem;
   align-items: center;
@@ -339,8 +345,8 @@ dialog::backdrop,
   background-color: var(--color-surface);
   color: var(--color-text);
   box-shadow: 0 16px 32px rgba(0, 0, 0, 0.5);
-  max-inline-size: 32rem;
-  inline-size: calc(100% - 2rem);
+  max-inline-size: min(32rem, calc(100% - 1rem));
+  inline-size: calc(100% - 1rem);
   margin: auto;
 }
 
@@ -350,7 +356,7 @@ dialog::backdrop,
 }
 
 .token-dialog-content {
-  padding: 1.5rem;
+  padding: clamp(1rem, 3.5vw, 1.5rem);
   display: flex;
   flex-direction: column;
   gap: 1rem;
@@ -762,9 +768,9 @@ dialog::backdrop,
 .main-content {
   flex: 1;
   inline-size: 100%;
-  max-inline-size: 1100px;
+  max-inline-size: var(--container-max-width);
   margin-inline: auto;
-  padding: 1.5rem 1rem 3rem 1rem;
+  padding: var(--container-padding) var(--container-padding) clamp(2.5rem, 5vh, 4rem) var(--container-padding);
 }
 
 .status-container {
@@ -861,7 +867,7 @@ dialog::backdrop,
 
 .repo-title {
   margin: 0;
-  font-size: 1.25rem;
+  font-size: var(--font-size-repo-title);
   font-weight: 600;
   word-break: break-all;
 }
@@ -877,7 +883,7 @@ dialog::backdrop,
   border-radius: 6px;
   cursor: pointer;
   outline: none;
-  max-inline-size: 16rem;
+  max-inline-size: min(16rem, 100%);
   text-overflow: ellipsis;
   transition: border-color 0.2s, box-shadow 0.2s;
 }
@@ -933,7 +939,7 @@ dialog::backdrop,
   display: flex;
   align-items: center;
   flex: 1;
-  min-inline-size: 240px;
+  min-inline-size: 0;
 }
 
 .filter-search-icon {
@@ -1360,7 +1366,7 @@ dialog::backdrop,
   font-size: 0.875rem;
   color: var(--color-text);
   overflow-wrap: anywhere;
-  word-break: break-all;
+  word-break: normal;
   line-height: 1.4;
 }
 
@@ -1426,39 +1432,7 @@ dialog::backdrop,
   box-sizing: border-box;
 }
 
-@media (max-width: 600px) {
-  .file-list-header {
-    flex-wrap: wrap;
-    gap: 0.5rem;
-  }
 
-  .file-list-header-right {
-    inline-size: 100%;
-    justify-content: flex-end;
-  }
-
-  .file-item {
-    gap: 0.5rem;
-    padding: 0.5rem 0.65rem;
-    flex-wrap: wrap;
-  }
-
-  .file-path {
-    inline-size: 100%;
-    order: 2;
-  }
-
-  .file-checkbox-label {
-    order: 1;
-  }
-
-  .file-meta {
-    order: 3;
-    inline-size: 100%;
-    justify-content: flex-end;
-    gap: 0.4rem;
-  }
-}
 
 .bottom-bar {
   position: sticky;
@@ -1473,7 +1447,7 @@ dialog::backdrop,
 
 .bottom-bar-inner {
   inline-size: 100%;
-  max-inline-size: 1100px;
+  max-inline-size: var(--container-max-width);
   margin-inline: auto;
   display: flex;
   flex-direction: column;
@@ -1622,7 +1596,7 @@ dialog::backdrop,
   background-color: var(--color-surface);
   color: var(--color-text);
   box-shadow: 0 16px 32px rgba(0, 0, 0, 0.5);
-  inline-size: min(92vw, 1100px);
+  inline-size: min(92vw, var(--preview-dialog-max-width));
   block-size: min(88vh, 850px);
   margin: auto;
   overflow: hidden;
@@ -1740,18 +1714,7 @@ dialog::backdrop,
   border-color: var(--color-focus);
 }
 
-@media (max-width: 600px) {
-  .generation-buttons-row {
-    flex-direction: column;
-    gap: 0.5rem;
-  }
 
-  .generate-btn-txt,
-  .generate-btn-zip,
-  .generate-btn-preview {
-    inline-size: 100%;
-  }
-}
 
 .toast-container {
   position: fixed;
@@ -1935,4 +1898,786 @@ dialog::backdrop,
   color: var(--color-text);
   overflow-wrap: anywhere;
   word-break: break-all;
+}
+
+@media (max-width: 639.98px) {
+  .file-list-header {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    align-items: stretch;
+    padding: 0.5rem 0.65rem;
+  }
+
+  .file-list-header-left {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    inline-size: 100%;
+  }
+
+  .select-all-label {
+    font-size: 0.8125rem;
+    gap: 0.45rem;
+  }
+
+  .smart-defaults-btn {
+    margin-inline-start: auto;
+    padding: 0.2rem 0.5rem;
+    font-size: 0.725rem;
+    white-space: nowrap;
+  }
+
+  .file-list-header-right {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    inline-size: 100%;
+    padding-block-start: 0.35rem;
+    border-block-start: 1px dashed var(--color-border);
+    padding-inline-start: calc(1.15rem + 0.6rem);
+    gap: 0.5rem;
+    box-sizing: border-box;
+  }
+
+  .col-header-type {
+    flex: 0 0 5.25rem;
+    inline-size: 5.25rem;
+    max-inline-size: 5.25rem;
+    text-align: center;
+    font-size: 0.7rem;
+    box-sizing: border-box;
+    margin: 0;
+  }
+
+  .col-header-size {
+    flex: 0 0 4.25rem;
+    inline-size: 4.25rem;
+    max-inline-size: 4.25rem;
+    text-align: right;
+    font-size: 0.7rem;
+    box-sizing: border-box;
+    margin: 0;
+  }
+
+  .master-mode-toggle {
+    margin-inline-start: auto;
+    flex: 0 0 7.4rem;
+    inline-size: 7.4rem;
+    min-inline-size: 7.4rem;
+    max-inline-size: 7.4rem;
+    font-size: 0.6875rem;
+    padding: 0.15rem 0.35rem 0.15rem 0.3rem;
+    box-sizing: border-box;
+  }
+
+  .file-item {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem 0.6rem;
+    padding: 0.5rem 0.65rem;
+  }
+
+  .file-checkbox-label {
+    order: 1;
+    flex-shrink: 0;
+  }
+
+  .file-path-group {
+    order: 2;
+    flex: 1;
+    min-inline-size: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+  }
+
+  .file-meta {
+    order: 3;
+    inline-size: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding-inline-start: calc(1.15rem + 0.6rem);
+    box-sizing: border-box;
+  }
+
+  .file-type-badge {
+    flex: 0 0 5.25rem;
+    inline-size: 5.25rem;
+    max-inline-size: 5.25rem;
+    font-size: 0.7rem;
+    text-align: center;
+    justify-self: auto;
+    padding: 0.12rem 0.25rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    box-sizing: border-box;
+    margin: 0;
+  }
+
+  .file-size {
+    flex: 0 0 4.25rem;
+    inline-size: 4.25rem;
+    max-inline-size: 4.25rem;
+    font-size: 0.75rem;
+    text-align: right;
+    justify-self: auto;
+    box-sizing: border-box;
+    margin: 0;
+  }
+
+  .file-meta .mode-toggle {
+    margin-inline-start: auto;
+    flex: 0 0 7.4rem;
+    inline-size: 7.4rem;
+    min-inline-size: 7.4rem;
+    max-inline-size: 7.4rem;
+    font-size: 0.6875rem;
+    padding: 0.15rem 0.35rem 0.15rem 0.3rem;
+    box-sizing: border-box;
+  }
+
+  .file-meta .toggle-track,
+  .master-mode-toggle .toggle-track {
+    inline-size: 24px;
+    block-size: 13px;
+    padding: 2px;
+  }
+
+  .file-meta .toggle-thumb,
+  .master-mode-toggle .toggle-thumb {
+    inline-size: 9px;
+    block-size: 9px;
+  }
+
+  .file-meta .mode-toggle[aria-checked="true"] .toggle-thumb,
+  .master-mode-toggle[aria-checked="true"] .toggle-thumb {
+    transform: translateX(11px);
+  }
+
+  .generation-buttons-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.45rem;
+    inline-size: 100%;
+  }
+
+  .generate-btn-txt {
+    grid-column: 1 / -1;
+    inline-size: 100%;
+    min-inline-size: 0;
+    padding: 0.55rem 1rem;
+    font-size: 0.95rem;
+  }
+
+  .generate-btn-zip,
+  .generate-btn-preview {
+    inline-size: 100%;
+    min-inline-size: 0;
+    padding: 0.45rem 0.5rem;
+    font-size: 0.8125rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .results-title-group {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-block-end: 0.5rem;
+  }
+
+  .repo-title {
+    inline-size: 100%;
+    margin-block-end: 0.15rem;
+  }
+
+  .branch-select {
+    font-size: 0.8rem;
+    padding: 0.2rem 0.5rem;
+    max-inline-size: 8.5rem;
+  }
+
+  .file-count-badge,
+  .selection-summary-badge {
+    font-size: 0.75rem;
+    padding: 0.15rem 0.5rem;
+  }
+
+  .toast-container {
+    top: 0.5rem;
+    right: 0.5rem;
+    left: 0.5rem;
+    inline-size: auto;
+    max-inline-size: none;
+  }
+
+  .token-backup-row {
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+
+  .token-backup-password {
+    inline-size: 100%;
+    flex: 1 1 100%;
+  }
+
+  .token-backup-btn {
+    flex: 1;
+    text-align: center;
+  }
+
+  .preview-dialog {
+    inline-size: calc(100% - 1rem);
+    max-inline-size: calc(100% - 1rem);
+    block-size: min(88vh, 720px);
+  }
+
+  .preview-dialog-content {
+    padding: 0.75rem;
+    gap: 0.5rem;
+  }
+
+  .preview-dialog-header {
+    gap: 0.4rem;
+  }
+
+  .preview-dialog-actions {
+    inline-size: 100%;
+    display: flex;
+    gap: 0.35rem;
+  }
+
+  .preview-action-btn {
+    flex: 1;
+    text-align: center;
+    padding: 0.4rem 0.35rem;
+    font-size: 0.75rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .token-dialog {
+    inline-size: calc(100% - 1rem);
+    max-inline-size: calc(100% - 1rem);
+  }
+
+  .token-dialog-content {
+    padding: 0.85rem;
+    gap: 0.65rem;
+  }
+
+  .token-dialog-actions {
+    display: flex;
+    gap: 0.4rem;
+    inline-size: 100%;
+  }
+
+  .token-dialog-actions button {
+    flex: 1;
+    text-align: center;
+    padding: 0.45rem 0.5rem;
+    font-size: 0.8125rem;
+  }
+}
+
+@media (max-width: 359.98px) {
+  :root {
+    --header-padding: 0.4rem 0.5rem;
+    --container-padding: 0.5rem;
+  }
+
+  .search-form {
+    gap: 0.35rem;
+  }
+
+  .search-input {
+    padding: 0.4rem 0.5rem;
+    font-size: 0.8125rem;
+  }
+
+  .search-button {
+    padding: 0.4rem 0.75rem;
+    font-size: 0.875rem;
+  }
+
+  .token-button,
+  .install-pwa-button {
+    padding: 0.4rem 0.55rem;
+    font-size: 0.8125rem;
+  }
+
+  #token-button-label,
+  #install-pwa-label {
+    display: none;
+  }
+
+  .rate-limit-badge {
+    display: none;
+  }
+
+  .file-list-header,
+  .file-item {
+    padding: 0.45rem 0.5rem;
+  }
+
+  .file-meta,
+  .file-list-header-right {
+    padding-inline-start: 0;
+  }
+
+  .smart-defaults-btn {
+    padding: 0.15rem 0.4rem;
+    font-size: 0.6875rem;
+  }
+
+  .file-type-badge {
+    max-inline-size: 5rem;
+    font-size: 0.65rem;
+    padding: 0.1rem 0.3rem;
+  }
+
+  .file-size {
+    font-size: 0.7rem;
+  }
+
+  .file-meta .mode-toggle,
+  .master-mode-toggle {
+    min-inline-size: 4.8rem;
+    max-inline-size: 5.5rem;
+    font-size: 0.6875rem;
+    padding: 0.15rem 0.35rem;
+  }
+
+  .toggle-track {
+    inline-size: 22px;
+    block-size: 12px;
+  }
+
+  .toggle-thumb {
+    inline-size: 8px;
+    block-size: 8px;
+  }
+
+  .mode-toggle[aria-checked="true"] .toggle-thumb {
+    transform: translateX(10px);
+  }
+
+  .preview-dialog-content {
+    padding: 0.75rem;
+  }
+
+  .preview-dialog-actions {
+    inline-size: 100%;
+  }
+
+  .preview-action-btn {
+    flex: 1;
+    text-align: center;
+    padding: 0.35rem 0.5rem;
+    font-size: 0.75rem;
+  }
+
+  .generation-buttons-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (min-width: 360px) and (max-width: 413.98px) {
+  :root {
+    --header-padding: 0.5rem 0.65rem;
+    --container-padding: 0.65rem;
+  }
+
+  .search-form {
+    gap: 0.4rem;
+  }
+
+  .search-input {
+    padding: 0.45rem 0.6rem;
+    font-size: 0.85rem;
+  }
+
+  .search-button {
+    padding: 0.45rem 0.9rem;
+    font-size: 0.9rem;
+  }
+
+  .token-button,
+  .install-pwa-button {
+    padding: 0.45rem 0.65rem;
+  }
+
+  #token-button-label,
+  #install-pwa-label {
+    display: none;
+  }
+
+  .file-list-header,
+  .file-item {
+    padding: 0.5rem 0.65rem;
+  }
+
+  .file-type-badge,
+  .col-header-type {
+    flex: 0 0 5.25rem;
+    inline-size: 5.25rem;
+    max-inline-size: 5.25rem;
+    font-size: 0.6875rem;
+  }
+
+  .file-size,
+  .col-header-size {
+    flex: 0 0 4.25rem;
+    inline-size: 4.25rem;
+    max-inline-size: 4.25rem;
+    font-size: 0.725rem;
+  }
+
+  .file-meta .mode-toggle,
+  .master-mode-toggle {
+    flex: 0 0 7.4rem;
+    min-inline-size: 7.2rem;
+    max-inline-size: 7.4rem;
+    font-size: 0.6875rem;
+  }
+}
+
+@media (min-width: 414px) and (max-width: 639.98px) {
+  :root {
+    --header-padding: 0.5rem 0.75rem;
+    --container-padding: 0.75rem;
+  }
+
+  .search-form {
+    gap: 0.4rem;
+  }
+
+  .search-input {
+    padding: 0.45rem 0.65rem;
+    font-size: 0.875rem;
+  }
+
+  .search-button {
+    padding: 0.45rem 0.85rem;
+    font-size: 0.875rem;
+  }
+
+  .token-button,
+  .install-pwa-button {
+    padding: 0.45rem 0.65rem;
+    font-size: 0.875rem;
+  }
+
+  #token-button-label,
+  #install-pwa-label {
+    display: none;
+  }
+
+  .file-list-header,
+  .file-item {
+    padding: 0.5rem 0.65rem;
+  }
+
+  .file-type-badge,
+  .col-header-type {
+    flex: 0 0 5.25rem;
+    inline-size: 5.25rem;
+    max-inline-size: 5.25rem;
+    font-size: 0.7rem;
+  }
+
+  .file-size,
+  .col-header-size {
+    flex: 0 0 4.25rem;
+    inline-size: 4.25rem;
+    max-inline-size: 4.25rem;
+    font-size: 0.75rem;
+  }
+
+  .file-meta .mode-toggle,
+  .master-mode-toggle {
+    flex: 0 0 7.4rem;
+    min-inline-size: 7.4rem;
+    max-inline-size: 7.4rem;
+    font-size: 0.6875rem;
+  }
+}
+
+@media (min-width: 640px) and (max-width: 899.98px) {
+  :root {
+    --container-max-width: 760px;
+    --col-type-width: 6.25rem;
+    --col-size-width: 5.5rem;
+    --col-mode-width: 7.25rem;
+  }
+
+  .search-form {
+    gap: 0.5rem;
+  }
+
+  .search-button {
+    padding: 0.55rem 1.15rem;
+  }
+
+  .file-list-header,
+  .file-item {
+    padding: 0.55rem 0.85rem;
+    gap: 0.65rem;
+  }
+
+  .file-list-header-right,
+  .file-meta {
+    gap: 0.55rem;
+  }
+
+  .file-type-badge {
+    font-size: 0.7rem;
+  }
+
+  .file-size {
+    font-size: 0.75rem;
+  }
+
+  .generation-buttons-row {
+    flex-direction: row;
+    gap: 0.5rem;
+  }
+
+  .generate-btn-txt {
+    flex: 1;
+  }
+
+  .generate-btn-zip {
+    min-inline-size: 120px;
+  }
+
+  .generate-btn-preview {
+    min-inline-size: 150px;
+  }
+}
+
+@media (min-width: 900px) and (max-width: 1279.98px) {
+  :root {
+    --container-max-width: 980px;
+    --col-type-width: 7rem;
+    --col-size-width: 6rem;
+    --col-mode-width: 7.5rem;
+  }
+
+  .generation-buttons-row {
+    flex-direction: row;
+    gap: 0.75rem;
+  }
+
+  .generate-btn-txt {
+    flex: 1;
+  }
+
+  .generate-btn-zip {
+    min-inline-size: 135px;
+  }
+
+  .generate-btn-preview {
+    min-inline-size: 165px;
+  }
+}
+
+@media (min-width: 1280px) and (max-width: 1919.98px) {
+  :root {
+    --container-max-width: 1240px;
+    --col-type-width: 7.5rem;
+    --col-size-width: 6.5rem;
+    --col-mode-width: 7.75rem;
+    --preview-dialog-max-width: 1180px;
+  }
+
+  .generation-buttons-row {
+    gap: 0.85rem;
+  }
+
+  .generate-btn-txt {
+    flex: 1;
+  }
+
+  .generate-btn-zip {
+    min-inline-size: 145px;
+  }
+
+  .generate-btn-preview {
+    min-inline-size: 175px;
+  }
+}
+
+@media (min-width: 1920px) and (max-width: 2879.98px) {
+  :root {
+    --container-max-width: 1560px;
+    --col-type-width: 8rem;
+    --col-size-width: 7rem;
+    --col-mode-width: 8.25rem;
+    --preview-dialog-max-width: 1440px;
+    --font-size-base: 1.05rem;
+    --font-size-repo-title: 1.4rem;
+  }
+
+  body {
+    font-size: var(--font-size-base);
+  }
+
+  .search-input {
+    padding: 0.65rem 1rem;
+    font-size: 1.05rem;
+  }
+
+  .search-button {
+    padding: 0.65rem 1.6rem;
+    font-size: 1.05rem;
+  }
+
+  .token-button,
+  .install-pwa-button {
+    padding: 0.65rem 1.1rem;
+    font-size: 0.95rem;
+  }
+
+  .file-path {
+    font-size: 0.95rem;
+  }
+
+  .file-type-badge {
+    font-size: 0.8125rem;
+    padding: 0.2rem 0.55rem;
+  }
+
+  .file-size {
+    font-size: 0.875rem;
+  }
+
+  .mode-toggle {
+    font-size: 0.8125rem;
+    padding: 0.25rem 0.65rem 0.25rem 0.45rem;
+  }
+
+  .generate-button {
+    padding: 0.75rem 1.5rem;
+    font-size: 1.05rem;
+  }
+
+  .generate-btn-zip {
+    min-inline-size: 160px;
+  }
+
+  .generate-btn-preview {
+    min-inline-size: 190px;
+  }
+
+  .preview-dialog {
+    block-size: min(85vh, 900px);
+  }
+
+  .preview-textarea {
+    font-size: 0.875rem;
+  }
+}
+
+@media (min-width: 2880px) {
+  :root {
+    --container-max-width: 1800px;
+    --col-type-width: 8.5rem;
+    --col-size-width: 7.5rem;
+    --col-mode-width: 8.75rem;
+    --preview-dialog-max-width: 1640px;
+    --font-size-base: 1.0625rem;
+    --font-size-repo-title: 1.5rem;
+  }
+
+  body {
+    font-size: var(--font-size-base);
+  }
+
+  .empty-state {
+    max-inline-size: 75ch;
+    margin-inline: auto;
+  }
+
+  .token-dialog-desc {
+    max-inline-size: 65ch;
+  }
+
+  .search-input {
+    padding: 0.75rem 1.15rem;
+    font-size: 1.1rem;
+  }
+
+  .search-button {
+    padding: 0.75rem 1.85rem;
+    font-size: 1.1rem;
+  }
+
+  .token-button,
+  .install-pwa-button {
+    padding: 0.75rem 1.25rem;
+    font-size: 1rem;
+  }
+
+  .file-path {
+    font-size: 1rem;
+  }
+
+  .file-type-badge {
+    font-size: 0.85rem;
+    padding: 0.25rem 0.6rem;
+  }
+
+  .file-size {
+    font-size: 0.9rem;
+  }
+
+  .mode-toggle {
+    font-size: 0.85rem;
+    padding: 0.3rem 0.75rem 0.3rem 0.5rem;
+  }
+
+  .toggle-track {
+    inline-size: 30px;
+    block-size: 16px;
+  }
+
+  .toggle-thumb {
+    inline-size: 12px;
+    block-size: 12px;
+  }
+
+  .mode-toggle[aria-checked="true"] .toggle-thumb {
+    transform: translateX(14px);
+  }
+
+  .generate-button {
+    padding: 0.85rem 1.75rem;
+    font-size: 1.1rem;
+  }
+
+  .generate-btn-zip {
+    min-inline-size: 175px;
+  }
+
+  .generate-btn-preview {
+    min-inline-size: 210px;
+  }
+
+  .preview-dialog {
+    block-size: min(85vh, 950px);
+  }
+
+  .preview-textarea {
+    font-size: 0.925rem;
+  }
 }
