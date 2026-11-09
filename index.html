@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GitHub Scrap</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <a href="#main-content" class="skip-link">Pular para o conteúdo principal</a>
+
+  <header class="app-header">
+    <form id="search-form" class="search-form" action="#" method="GET" novalidate>
+      <label for="search-input" class="visually-hidden">Repositório GitHub (URL ou owner/repo)</label>
+      <input
+        type="text"
+        id="search-input"
+        name="query"
+        class="search-input"
+        placeholder="Digite ex: facebook/react ou https://github.com/owner/repo"
+        autocomplete="off"
+        autocorrect="off"
+        autocapitalize="off"
+        spellcheck="false"
+        autofocus
+        required
+      >
+      <button type="submit" id="search-button" class="search-button">IR</button>
+      <button type="button" id="token-button" class="token-button" title="Configurar Personal Access Token do GitHub">
+        <span class="token-icon" aria-hidden="true">🔑</span>
+        <span id="token-button-label">Token</span>
+        <span id="rate-limit-badge" class="rate-limit-badge" hidden></span>
+      </button>
+    </form>
+    <div id="search-progress-bar" class="search-progress-bar" hidden>
+      <div class="search-progress-bar-fill"></div>
+    </div>
+  </header>
+
+  <main id="main-content" class="main-content">
+    <div id="status-container" class="status-container" aria-live="polite" aria-atomic="true"></div>
+
+    <section id="empty-state" class="empty-state">
+      <p class="empty-text">
+        Informe um repositório GitHub no campo acima e clique em <strong>IR</strong> (ou pressione <strong>Enter</strong>) para listar todos os seus arquivos.
+      </p>
+      <p class="empty-hint">
+        Formatos aceitos: <code>owner/repo</code>, <code>https://github.com/owner/repo</code> ou com branch específica (ex: <code>.../tree/main</code>).
+      </p>
+    </section>
+
+    <section id="results-section" class="results-section" aria-label="Arquivos do repositório" hidden>
+      <header class="results-header">
+        <div class="results-title-group">
+          <h2 id="repo-title" class="repo-title"></h2>
+          <label for="branch-select" class="visually-hidden">Branch</label>
+          <select id="branch-select" class="branch-select"></select>
+          <span id="file-count" class="file-count-badge"></span>
+          <span id="selection-summary" class="selection-summary-badge"></span>
+        </div>
+
+        <div id="truncated-warning" class="truncated-warning" role="alert" hidden>
+          ⚠️ <strong>Atenção:</strong> O GitHub limitou o retorno desta árvore (repositório com mais de 100.000 arquivos ou maior que 7 MB).
+        </div>
+
+        <div class="file-filter-bar">
+          <div class="filter-input-wrapper">
+            <span class="filter-search-icon" aria-hidden="true">🔍</span>
+            <label for="file-filter-input" class="visually-hidden">Filtrar arquivos por caminho</label>
+            <input
+              type="search"
+              id="file-filter-input"
+              class="file-filter-input"
+              placeholder="Localizar arquivo (ex: src/, .ts, config)..."
+              autocomplete="off"
+              spellcheck="false"
+            >
+            <button type="button" id="filter-clear-btn" class="filter-clear-btn" aria-label="Limpar filtro de busca" hidden>×</button>
+          </div>
+          <span id="filter-feedback" class="filter-feedback" aria-live="polite"></span>
+        </div>
+      </header>
+
+      <div class="file-list-header" id="file-list-header">
+        <div class="file-list-header-left">
+          <label class="select-all-label" for="select-all-checkbox">
+            <input type="checkbox" id="select-all-checkbox" class="select-all-checkbox" checked>
+            <span id="select-all-text">Selecionar todos</span>
+          </label>
+          <button type="button" id="btn-smart-defaults" class="smart-defaults-btn" title="Restaura seleção e define binários e arquivos > 500 KB como Referência e textos como Scrap">Padrão Inteligente</button>
+        </div>
+        <div class="file-list-header-right">
+          <span class="col-header col-header-type">Tipo</span>
+          <span class="col-header col-header-size">Tamanho</span>
+          <button type="button" role="switch" id="master-mode-toggle" class="mode-toggle master-mode-toggle" aria-checked="true" aria-label="Alternar todos os arquivos entre Scrap e Referência">
+            <span class="toggle-track" aria-hidden="true">
+              <span class="toggle-thumb"></span>
+            </span>
+            <span class="toggle-label">Scrap</span>
+          </button>
+        </div>
+      </div>
+
+      <ul id="file-list" class="file-list" aria-label="Lista de caminhos de arquivos"></ul>
+    </section>
+  </main>
+
+  <footer class="bottom-bar">
+    <div class="bottom-bar-inner">
+      <div id="generation-progress-container" class="generation-progress-container" hidden>
+        <div class="progress-info-row">
+          <span id="progress-status-text" class="progress-status-text">0% (0/0) • Preparando...</span>
+        </div>
+        <div class="progress-track" role="progressbar" id="generation-progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Progresso da geração do arquivo compilado">
+          <div id="progress-bar-fill" class="progress-bar-fill"></div>
+        </div>
+      </div>
+      <div class="generation-buttons-row">
+        <button type="button" id="generate-button" class="generate-button generate-btn-txt" disabled>Gerar TXT</button>
+        <button type="button" id="generate-zip-button" class="generate-button generate-btn-zip" disabled>Gerar ZIP</button>
+        <button type="button" id="preview-button" class="generate-button generate-btn-preview" disabled>Visualizar / Copiar</button>
+      </div>
+    </div>
+  </footer>
+
+  <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="false"></div>
+
+  <dialog id="token-dialog" class="token-dialog" aria-labelledby="token-dialog-title">
+    <div class="token-dialog-content">
+      <div class="token-dialog-header">
+        <h2 id="token-dialog-title" class="token-dialog-title">Personal Access Token do GitHub</h2>
+        <button type="button" id="token-close-icon-btn" class="token-close-icon-btn" aria-label="Fechar">×</button>
+      </div>
+      <p id="token-dialog-desc" class="token-dialog-desc">
+        Aumente o limite da API do GitHub de 60 para 5.000 requisições/hora (e acesse repositórios privados) informando seu Personal Access Token. O token fica salvo apenas no seu navegador.
+      </p>
+      <p class="token-dialog-helper">
+        <a id="token-generate-link" class="token-generate-link" href="https://github.com/settings/tokens/new?description=GitHub+Scrap&amp;scopes=repo,read:user" target="_blank" rel="noopener noreferrer">Gerar token no GitHub ↗</a>
+      </p>
+      <div class="token-input-group">
+        <label for="token-profile-label" class="visually-hidden">Nome do Perfil</label>
+        <input type="text" id="token-profile-label" class="token-profile-input" placeholder="Nome do perfil (ex: Trabalho, Pessoal)" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="token-input-group">
+        <label for="token-input" class="visually-hidden">Personal Access Token</label>
+        <input type="password" id="token-input" class="token-input" placeholder="ghp_... ou github_pat_..." autocomplete="off" spellcheck="false">
+      </div>
+      <p id="token-status" class="token-status"></p>
+      <p id="token-validation-status" class="token-validation-status" role="alert" hidden></p>
+      <div class="token-dialog-actions">
+        <button type="button" id="token-save-btn" class="token-save-btn">Salvar Token</button>
+        <button type="button" id="token-remove-btn" class="token-remove-btn">Remover Token</button>
+        <button type="button" id="token-close-btn" class="token-close-btn">Fechar</button>
+      </div>
+      <div id="token-profiles-section" class="token-profiles-section" hidden>
+        <h3 id="token-profiles-title" class="token-profiles-title">Perfis salvos</h3>
+        <ul id="token-profiles-list" class="token-profiles-list"></ul>
+      </div>
+      <div id="token-backup-section" class="token-backup-section">
+        <h3 id="token-backup-title" class="token-backup-title">Backup Criptografado</h3>
+        <div class="token-backup-row">
+          <label for="token-backup-password" class="visually-hidden">Senha do backup</label>
+          <input type="password" id="token-backup-password" class="token-backup-password" placeholder="Senha de criptografia do backup" autocomplete="off" spellcheck="false">
+          <button type="button" id="token-export-btn" class="token-backup-btn">Exportar</button>
+          <button type="button" id="token-import-btn" class="token-backup-btn">Importar</button>
+          <input type="file" id="token-import-file" accept=".json" hidden>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="preview-dialog" class="preview-dialog" aria-labelledby="preview-title">
+    <div class="preview-dialog-content">
+      <div class="preview-dialog-header">
+        <div class="preview-title-group">
+          <h2 id="preview-title" class="preview-title">preview.txt</h2>
+          <span id="preview-size-badge" class="preview-badge-size"></span>
+        </div>
+        <div class="preview-dialog-actions">
+          <button type="button" id="copy-preview-button" class="preview-action-btn preview-copy-btn">Copiar Tudo</button>
+          <button type="button" id="open-tab-preview-button" class="preview-action-btn preview-tab-btn">Abrir em Nova Aba</button>
+          <button type="button" id="close-preview-button" class="preview-action-btn preview-close-btn" aria-label="Fechar">Fechar</button>
+        </div>
+      </div>
+      <textarea id="preview-textarea" class="preview-textarea" readonly spellcheck="false"></textarea>
+    </div>
+  </dialog>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
