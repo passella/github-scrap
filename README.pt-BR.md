@@ -6,13 +6,16 @@
 
 > **Aplicação web 100% client-side e zero-dependência (HTML5, CSS3 e Vanilla JavaScript ES Modules) pronta para GitHub Pages para explorar, selecionar e extrair código-fonte de repositórios GitHub em um único arquivo `.txt` (otimizado para LLMs/IA), arquivo `.zip` nativo ou visualização/cópia direta na tela.**
 
+🌐 **Acessar Aplicação:** [https://passella.github.io/github-scrap/](https://passella.github.io/github-scrap/)
+
 ---
 
+[![Aplicação Web](https://img.shields.io/badge/Aplica%C3%A7%C3%A3o_Web-Online-success.svg)](https://passella.github.io/github-scrap/)
 [![Licença: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Zero Dependências](https://img.shields.io/badge/dependencies-0-brightgreen.svg)](#-padrões-de-engenharia--invariantes)
 [![Plataforma: GitHub Pages](https://img.shields.io/badge/platform-GitHub%20Pages%20Ready-black.svg)](#-deploy-no-github-pages)
 [![Arquitetura: Ports & Adapters](https://img.shields.io/badge/architecture-Ports%20%26%20Adapters-orange.svg)](#-arquitetura-do-sistema-ports--adapters)
-[![Performance: Uint8Array + Virtualização](https://img.shields.io/badge/performance-Uint8Array%20%2B%20Virtualiza%C3%A7%C3%A3o-purple.svg)](#10-extrema-performance-para-alta-volumetria)
+[![Performance: Uint8Array + Virtualização](https://img.shields.io/badge/performance-Uint8Array%20%2B%20Virtualiza%C3%A7%C3%A3o-purple.svg)](#11-extrema-performance-para-alta-volumetria)
 
 ---
 
@@ -55,12 +58,13 @@ Extração híbrida que equilibra o consumo de contexto de IA e o tráfego de re
 | **`Referência`** | Zero requisições de download ($O(1)$). Extrai os metadados diretamente da árvore do Git. | Bloco estruturado com caminho, tipo, tamanho exato em bytes, hash SHA do Git blob, link de visualização web (`blob`) e link direto de download (`raw`). | Arquivos binários, fontes, mídias, arquivos compactados ou arquivos gigantescos (`> 500 KB`). |
 
 * **Botão Padrão Inteligente:** Com 1 clique, marca automaticamente arquivos binários e arquivos maiores que **500 KB** como `Referência`, mantendo todo o código-fonte em modo `Scrap`.
+* **Chips Interativos de Seleção Rápida por Extensão (`#extension-chips-bar`):** Exibe no cabeçalho da lista de arquivos uma barra horizontal compacta com as 10 extensões mais frequentes do repositório carregado (ex: `.js (24)`, `.css (4)`, `.md (3)`). Clicar em um chip alterna instantaneamente a seleção de todos os arquivos daquela extensão, atualizando o estado visual ativo (`.extension-chip.active`), os checkboxes e os contadores do rodapé.
 * **Proteção contra Bytes Nulos:** Examina o fluxo de texto baixado e intercepta caracteres nulos (`\0`), prevenindo a inserção acidental de binários corrompidos no arquivo final.
 * **Controle Granular e em Lote:** Permite alternar arquivos individualmente entre Scrap e Referência ou aplicar ações em lote a todos os arquivos listados.
 
-### 5. 🔍 Localizador Rápido (`Ctrl+F` com Rolagem Suave)
-* O atalho `Ctrl+F` (ou `Cmd+F`) foca instantaneamente na barra de pesquisa superior.
-* Localiza o arquivo na lista ativa e rola suavemente (`scrollIntoView`) até ele, sem ocultar ou desmontar os demais itens da visualização.
+### 5. 🔍 Localizador Rápido (`Ctrl+F` / `Cmd+F` com Rolagem Centralizada Suave)
+* O atalho `Ctrl+F` (ou `Cmd+F`) foca instantaneamente na barra de busca rápida (`#file-filter-input` quando um repositório está carregado, ou `#search-input` caso contrário).
+* Localiza o arquivo na lista ativa e rola suavemente centralizando-o na viewport (`scrollIntoView({ block: 'center', behavior: 'smooth' })`) em conjunto com `scroll-padding-block` e `scroll-margin-block`, garantindo que nenhum item encontrado fique oculto atrás do cabeçalho ou rodapé fixos.
 * Permite navegar sequencialmente entre os resultados encontrados utilizando `Enter` (próximo) e `Shift+Enter` (anterior).
 
 ### 6. 📊 Estimativa em Tempo Real de Tamanho e Tokens para IA
@@ -69,32 +73,39 @@ Extração híbrida que equilibra o consumo de contexto de IA e o tráfego de re
   * **Tamanho Estimado:** Projeção matemática precisa do tamanho final compilado (`B`, `KB`, `MB`, `GB`).
   * **Tokens Estimados para LLMs:** Cálculo em tempo real baseado na densidade média de caracteres por token, facilitando o dimensionamento exato do contexto para prompts de IA.
 
-### 7. 📦 3 Formas de Exportação (Compatível com Redes Corporativas / Anti-DLP)
-Projetado para operar com eficiência tanto em computadores pessoais quanto em ambientes corporativos com restrições severas:
+### 7. 📦 3 Formas de Exportação, Web Worker Dedicado & Atalhos Globais
+Projetado para operar com **0ms de bloqueio da main thread** via [`src/adapters/export-worker.js`](./src/adapters/export-worker.js) tanto em computadores pessoais quanto em ambientes corporativos restritos:
 
-1. **Gerar TXT:** Baixa o arquivo `<repo>.txt` contendo todos os arquivos selecionados, concatenados e separados por cabeçalhos canônicos de 80 colunas.
-2. **Gerar ZIP:** Empacota os arquivos selecionados preservando a estrutura original de diretórios do repositório, utilizando `CompressionStream('deflate-raw')` e um codificador binário PKZIP nativo sem dependências externas.
-3. **Visualizar / Copiar:** Abre o resultado compilado em um diálogo modal acessível (`<dialog>`), oferecendo:
+1. **Gerar TXT (`Ctrl+Shift+S` / `Cmd+Shift+S`):** Compila e salva o arquivo `<repo>.txt` em um Web Worker dedicado (`TextFormatter.buildOutputDocument`) contendo todos os arquivos selecionados separados por cabeçalhos canônicos de 80 colunas. Utiliza a **File System Access API** nativa (`window.showSaveFilePicker` + `FileSystemWritableFileStream`) para gravação direta em disco quando disponível, com fallback transparente para `Blob` + `<a download>`.
+2. **Gerar ZIP (`Ctrl+Shift+Z` / `Cmd+Shift+Z`):** Empacota os arquivos selecionados preservando a estrutura original de diretórios do repositório em um Web Worker dedicado (`ZipEncoder.encode` com `Transferable` zero-copy), utilizando `CompressionStream('deflate-raw')` e gravação direta via `showSaveFilePicker` (com fallback automático).
+3. **Visualizar / Copiar (`Ctrl+Shift+P` / `Cmd+Shift+P`):** Abre o resultado compilado em um diálogo modal acessível (`<dialog>`), oferecendo:
    * **Copiar Tudo:** Copia todo o conteúdo compilado diretamente para a área de transferência em 1 clique.
    * **Abrir em Nova Aba:** Transmite o conteúdo para uma nova aba do navegador via URL temporária `Blob`, permitindo que usuários em redes corporativas com bloqueio de download (DLP) visualizem e salvem o texto sem acionar filtros de segurança.
 
-### 8. 🔑 Autenticação Opcional com Personal Access Token (PAT)
-* **Limite Expandido:** Eleva o teto da API REST do GitHub de **60 requisições/hora** para **5.000 requisições/hora**.
-* **Acesso a Repositórios Privados:** Permite explorar e extrair repositórios privados por meio de cabeçalhos de autorização e da API de Blobs do GitHub (`GET /repos/{owner}/{repo}/git/blobs/{sha}`) com decodificação Base64.
-* **Armazenamento 100% Local:** O token é gravado exclusivamente no `localStorage` do seu navegador e enviado de forma direta para `api.github.com`. Nenhum servidor intermediário tem acesso às suas credenciais.
+### 8. 🔑 Gerenciador Multi-Perfil de Tokens GitHub & Backup Criptografado
+* **Limite Expandido & Repositórios Privados:** Eleva o teto da API REST do GitHub de **60 requisições/hora** para **5.000 requisições/hora** e permite acessar repositórios privados via API de Blobs (`GET /repos/{owner}/{repo}/git/blobs/{sha}`) com decodificação Base64.
+* **Gerenciamento Multi-Perfil:** Salve, nomeie, alterne e exclua múltiplos perfis de Personal Access Token (ex: *Trabalho*, *Pessoal*) com link direto para geração no GitHub com escopos `repo,read:user` pré-selecionados.
+* **Validação Real & Alerta de Expiração:** Valida tokens em tempo real contra `GET /user`, exibindo indicador visual de status/validade (`valid`, `expiring`, `invalid`, `unverified`), usuário autenticado (`@username`), escopos ativos, badge de rate-limit na barra superior e alerta proativo quando o token está próximo de expirar.
+* **Backup e Restauração Criptografada (Web Crypto API):** Exporte e importe seus perfis de token em arquivos JSON protegidos por senha com criptografia autenticada no navegador via **`PBKDF2-SHA256`** (100.000 iterações + salt aleatório de 16 bytes) e **`AES-256-GCM`** (IV aleatório de 12 bytes) em [`src/adapters/crypto-adapter.js`](./src/adapters/crypto-adapter.js).
+* **Armazenamento 100% Local:** Os tokens ficam salvos exclusivamente no `localStorage` do navegador e são enviados diretamente para `api.github.com`.
 
-### 9. 💾 Persistência Inteligente & Cache de Sessão
-* **Persistência de URL:** Armazena automaticamente o último repositório consultado no `localStorage`, preenchendo o campo de busca na próxima visita.
-* **Estado por Branch:** Memoriza as seleções de arquivos e preferências de modo por repositório e branch (`owner/repo@branch`).
-* **Cache em Sessão:** Utiliza o `sessionStorage` para guardar respostas da árvore Git, evitando requisições de rede redundantes ao alternar abas ou branches durante a mesma sessão.
+### 9. 📲 Suporte PWA Offline Completo (Progressive Web App)
+* **Instalação Nativa:** Inclui [`manifest.json`](./manifest.json), ícone vetorial [`favicon.svg`](./favicon.svg) e o botão discreto **`#install-pwa-button`** na barra superior, exibido automaticamente quando o navegador dispara o evento `beforeinstallprompt`.
+* **Service Worker de App Shell Offline ([`sw.js`](./sw.js)):** Realiza o precache de toda a estrutura da aplicação (`index.html`, `style.css`, `app.js`, `manifest.json`, `favicon.svg` e todos os módulos em `src/`) utilizando a estratégia **Stale-While-Revalidate** para assets estáticos e **Network-Only** para `api.github.com` e `raw.githubusercontent.com`.
 
-### 10. 🏎️ Extrema Performance para Alta Volumetria
+### 10. 💾 Persistência Inteligente, Cache Offline IndexedDB Compactado & Sincronia Multi-Aba
+* **Persistência de URL e Estado por Branch:** Armazena o último repositório consultado e memoriza as seleções e modos por repositório e branch (`owner/repo@branch`) no `localStorage`.
+* **Cache Offline de Árvores Git via IndexedDB Compactado ([`src/adapters/tree-cache-adapter.js`](./src/adapters/tree-cache-adapter.js)):** Persiste metadados, branches e árvores Git completas (`owner/repo@branch`) no `IndexedDB` (`github-scrap-cache` / `git-trees`) compactadas com `CompressionStream('gzip')` / `DecompressionStream('gzip')` (com TTL online de 24h e fallback offline automático ilimitado caso a rede esteja indisponível).
+* **Sincronização em Tempo Real Entre Abas:** Sincroniza instantaneamente entre todas as abas abertas a troca/adição/remoção de perfis de Token GitHub e a atualização do badge de Rate Limit via `BroadcastChannel('github-scrap:sync')` e `window.addEventListener('storage')`.
+
+### 11. 🏎️ Extrema Performance para Alta Volumetria
 Otimizado para processar repositórios massivos contendo dezenas de milhares de arquivos:
 * **Matriz Contígua em Memória (`Uint8Array`):** Estado de seleção e modo de cada arquivo gerenciados em arrays tipados contíguos de memória (`Uint8Array`), garantindo leitura e gravação em tempo estrito $O(1)$ sem sobrecarga de Garbage Collector.
 * **Delegação Centralizada de Eventos:** Um único ouvinte no container `#file-list` gerencia todas as interações do usuário em milhares de linhas.
 * **Renderização em Lote:** Montagem de elementos fora da árvore principal do DOM via `DocumentFragment`, gerando um único reflow e repaint no navegador.
 * **Virtualização com CSS Moderno:** Utiliza `content-visibility: auto` e `contain-intrinsic-size` para evitar o cálculo de layout de nós fora da viewport, mantendo rolagem a 60/120 FPS.
 * **Pool Concorrente Limitado:** Fila de downloads controlada por 6 workers paralelos, evitando o esgotamento de conexões HTTP do navegador e preservando a ordem canônica dos arquivos.
+* **Web Worker Dedicado de Exportação ([`src/adapters/export-worker.js`](./src/adapters/export-worker.js)):** Executa em background a codificação binária PKZIP (`ZipEncoder.encode` com `Transferable` `[zipBytes.buffer]`) e a formatação de documento texto (`TextFormatter.buildOutputDocument`), mantendo a main thread com 0ms de bloqueio e fallback automático in-thread quando `Worker` não estiver disponível.
 * **Cancelamento Atômico com `AbortController`:** Interrompe requisições de rede pendentes de forma imediata quando uma nova busca é disparada.
 
 ---
@@ -150,17 +161,21 @@ flowchart LR
 
 | Camada | Módulo / Arquivo | Responsabilidade |
 | :--- | :--- | :--- |
-| **Apresentação** | [`index.html`](./index.html) | Marcação semântica HTML5 acessível com formulários, barra de progresso e diálogos modais. |
-| **Apresentação** | [`style.css`](./style.css) | Estilização responsiva CSS3 com tema claro/escuro automático, barras sticky e layout em CSS Grid. |
-| **Composition Root** | [`app.js`](./app.js) | Ponto de entrada da aplicação, inicialização de eventos e injeção de dependências. |
+| **Apresentação** | [`index.html`](./index.html) | Marcação semântica HTML5 acessível com formulários, barra de progresso, botão de instalação PWA (`#install-pwa-button`) e diálogos modais. |
+| **Apresentação** | [`style.css`](./style.css) | Estilização responsiva CSS3 com barras sticky, `scroll-padding-block` / `scroll-margin-block` e layout em CSS Grid. |
+| **PWA / Offline** | [`manifest.json`](./manifest.json) / [`sw.js`](./sw.js) / [`favicon.svg`](./favicon.svg) | Web App Manifest, ícone vetorial e Service Worker de cache offline do App Shell (Stale-While-Revalidate). |
+| **Composition Root** | [`app.js`](./app.js) | Ponto de entrada da aplicação, registro do Service Worker, inicialização de eventos e injeção de dependências. |
 | **Domínio Puro** | [`src/domain/repo-parser.js`](./src/domain/repo-parser.js) | Validação sintática e normalização de entradas de repositório (`owner/repo`, URLs web, git, branches). |
 | **Domínio Puro** | [`src/domain/file-classifier.js`](./src/domain/file-classifier.js) | Classificação determinística de extensões binárias, auditoria de null-bytes e Padrão Inteligente. |
 | **Domínio Puro** | [`src/domain/text-formatter.js`](./src/domain/text-formatter.js) | Geração do texto final com separadores canônicos de 80 colunas, blocos de referência e estimativa de tokens. |
 | **Adaptador Secundário** | [`src/adapters/i18n.js`](./src/adapters/i18n.js) | Dicionários de tradução multi-idiomas e detecção automática de locale (`pt-BR`, `es`, `en`). |
-| **Adaptador Secundário** | [`src/adapters/github-client.js`](./src/adapters/github-client.js) | Comunicação HTTP com a API REST do GitHub (árvores, branches, blobs e leitura de rate limit). |
+| **Adaptador Secundário** | [`src/adapters/github-client.js`](./src/adapters/github-client.js) | Comunicação HTTP com a API REST do GitHub (árvores, branches, blobs, validação de token e rate limit). |
 | **Adaptador Secundário** | [`src/adapters/zip-encoder.js`](./src/adapters/zip-encoder.js) | Codificador binário PKZIP nativo com tabela CRC-32 e compressão streaming via `deflate-raw`. |
-| **Adaptador Secundário** | [`src/adapters/storage-adapter.js`](./src/adapters/storage-adapter.js) | Abstração resiliente para persistência e leitura em `localStorage` e `sessionStorage`. |
-| **Adaptador Primário** | [`src/adapters/dom-controller.js`](./src/adapters/dom-controller.js) | Gerenciador de eventos do DOM, renderização de lista, telemetria HUD e diálogo de pré-visualização. |
+| **Adaptador Secundário** | [`src/adapters/export-worker.js`](./src/adapters/export-worker.js) | Module Web Worker dedicado e cliente com transferência zero-copy (`Transferable`) para ZIP e formatação TXT (com fallback in-thread). |
+| **Adaptador Secundário** | [`src/adapters/storage-adapter.js`](./src/adapters/storage-adapter.js) | Abstração resiliente para persistência multi-perfil em `localStorage` e sincronização multi-aba via `BroadcastChannel`. |
+| **Adaptador Secundário** | [`src/adapters/tree-cache-adapter.js`](./src/adapters/tree-cache-adapter.js) | Cache offline persistente em `IndexedDB` compactado via `CompressionStream('gzip')` para árvores Git e branches. |
+| **Adaptador Secundário** | [`src/adapters/crypto-adapter.js`](./src/adapters/crypto-adapter.js) | Adaptador de criptografia autenticada via Web Crypto API (`PBKDF2-SHA256` + `AES-256-GCM`) para backup de perfis. |
+| **Adaptador Primário** | [`src/adapters/dom-controller.js`](./src/adapters/dom-controller.js) | Gerenciador de eventos do DOM, chips de extensão (`#extension-chips-bar`), atalhos `Ctrl+Shift+S/Z/P`, escrita `showSaveFilePicker`, busca rápida e PWA. |
 
 ---
 
@@ -222,7 +237,12 @@ php -S localhost:8000
 
 ## 🌐 Deploy no GitHub Pages
 
-A publicação no **GitHub Pages** é imediata:
+A aplicação está publicada e acessível publicamente em:
+```
+https://passella.github.io/github-scrap/
+```
+
+Para publicar sua própria instância no **GitHub Pages**:
 
 1. Suba o repositório para sua conta no GitHub.
 2. No repositório, acesse a aba **Settings** > **Pages**.
@@ -232,7 +252,7 @@ A publicação no **GitHub Pages** é imediata:
 4. Clique em **Save**.
 5. Em poucos instantes, a aplicação estará disponível publicamente em:
    ```
-   https://<seu-usuario>.github.io/<nome-do-repositorio>/
+   https://passella.github.io/github-scrap/
    ```
 
 ---

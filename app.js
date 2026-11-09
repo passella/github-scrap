@@ -6,7 +6,9 @@ export * from './src/domain/text-formatter.js';
 export * from './src/adapters/i18n.js';
 export * from './src/adapters/github-client.js';
 export * from './src/adapters/zip-encoder.js';
+export * from './src/adapters/export-worker.js';
 export * from './src/adapters/storage-adapter.js';
+export * from './src/adapters/tree-cache-adapter.js';
 export * from './src/adapters/crypto-adapter.js';
 export * from './src/adapters/dom-controller.js';
 
@@ -17,6 +19,7 @@ if (typeof document !== 'undefined') {
       input: document.querySelector('#search-input'),
       button: document.querySelector('#search-button'),
       tokenButton: document.querySelector('#token-button'),
+      installPwaButton: document.querySelector('#install-pwa-button'),
       rateLimitBadge: document.querySelector('#rate-limit-badge'),
       tokenDialog: document.querySelector('#token-dialog'),
       tokenInput: document.querySelector('#token-input'),
@@ -45,6 +48,7 @@ if (typeof document !== 'undefined') {
       fileFilterInput: document.querySelector('#file-filter-input'),
       filterClearBtn: document.querySelector('#filter-clear-btn'),
       filterFeedback: document.querySelector('#filter-feedback'),
+      extensionChipsBar: document.querySelector('#extension-chips-bar'),
       fileListHeader: document.querySelector('#file-list-header'),
       selectAllCheckbox: document.querySelector('#select-all-checkbox'),
       btnSmartDefaults: document.querySelector('#btn-smart-defaults'),
@@ -66,5 +70,9 @@ if (typeof document !== 'undefined') {
 
     const controller = new DomController(dom);
     controller.init();
+
+    if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && typeof navigator.serviceWorker.register === 'function') {
+      navigator.serviceWorker.register('./sw.js').catch(() => {});
+    }
   });
 }

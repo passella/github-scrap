@@ -79,7 +79,7 @@ export class ZipBuilder {
     });
   }
 
-  buildBlob() {
+  buildUint8Array() {
     const { dosDate, dosTime } = getDosDateTime();
     let totalLocalHeadersSize = 0;
     let totalCentralDirectorySize = 0;
@@ -163,6 +163,33 @@ export class ZipBuilder {
     view.setUint32(offset + 16, centralDirectoryStartOffset, true);
     view.setUint16(offset + 20, 0, true);
 
-    return new Blob([buffer], { type: 'application/zip' });
+    return new Uint8Array(buffer);
+  }
+
+  buildBlob() {
+    const uint8 = this.buildUint8Array();
+    return new Blob([uint8], { type: 'application/zip' });
+  }
+}
+
+export class ZipEncoder {
+  static async encode(entries = []) {
+    const builder = new ZipBuilder();
+    for (let i = 0; i < entries.length; i += 1) {
+      const item = entries[i];
+      if (!item || !item.path) continue;
+      let bytes = item.data !== undefined ? item.data : item.content;
+      if (typeof bytes === 'string') {
+        bytes = new TextEncoder().encode(bytes);
+      } else if (bytes instanceof ArrayBuffer) {
+        bytes = new Uint8Array(bytes);
+      } else if (ArrayBuffer.isView(bytes)) {
+        bytes = new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      } else if (!bytes) {
+        bytes = new Uint8Array(0);
+      }
+      await builder.addFile(item.path, bytes);
+    }
+    return builder.buildUint8Array();
   }
 }

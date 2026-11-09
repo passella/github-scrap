@@ -1,10 +1,90 @@
+import { TreeCacheAdapter } from './tree-cache-adapter.js';
+
+export { TreeCacheAdapter };
+
 const STORAGE_KEY = 'github-scrap:last-repo-url';
 const REPO_PREFS_PREFIX = 'github-scrap:repo-preferences:';
 const TOKEN_KEY = 'github-scrap:github-token';
 const TOKEN_USER_KEY = 'github-scrap:github-token-user';
 const TOKEN_PROFILES_KEY = 'github-scrap:token-profiles';
+const LAST_RATE_LIMIT_KEY = 'github-scrap:last-rate-limit';
+const SYNC_CHANNEL_NAME = 'github-scrap:sync';
 
 export class StorageAdapter {
+  static syncChannel = null;
+  static syncListeners = new Set();
+
+  static initSyncChannel() {
+    if (this.syncChannel || typeof BroadcastChannel !== 'function') {
+      return this.syncChannel;
+    }
+    try {
+      this.syncChannel = new BroadcastChannel(SYNC_CHANNEL_NAME);
+      if (typeof this.syncChannel.unref === 'function') {
+        this.syncChannel.unref();
+      }
+      this.syncChannel.onmessage = (event) => {
+        const data = event && event.data ? event.data : null;
+        if (!data || !data.type) return;
+        this.notifySyncListeners(data);
+      };
+    } catch {
+      this.syncChannel = null;
+    }
+    return this.syncChannel;
+  }
+
+  static onSync(listener) {
+    if (typeof listener !== 'function') return () => {};
+    this.initSyncChannel();
+    this.syncListeners.add(listener);
+    return () => this.syncListeners.delete(listener);
+  }
+
+  static notifySyncListeners(message) {
+    for (const listener of this.syncListeners) {
+      try {
+        listener(message);
+      } catch {
+      }
+    }
+  }
+
+  static broadcastSync(type, payload = {}) {
+    const ch = this.initSyncChannel();
+    const message = {
+      type,
+      ...payload,
+      timestamp: Date.now(),
+    };
+    if (ch && typeof ch.postMessage === 'function') {
+      try {
+        ch.postMessage(message);
+      } catch {
+      }
+    }
+  }
+
+  static getLastRateLimit() {
+    try {
+      const raw = localStorage.getItem(LAST_RATE_LIMIT_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  static setLastRateLimit(rateLimit, { broadcast = true } = {}) {
+    if (!rateLimit) return;
+    try {
+      localStorage.setItem(LAST_RATE_LIMIT_KEY, JSON.stringify(rateLimit));
+    } catch {
+    }
+    if (broadcast) {
+      this.broadcastSync('rate-limit-changed', { rateLimit });
+    }
+  }
+
   static getStoredRepoUrl() {
     try {
       return localStorage.getItem(STORAGE_KEY) || '';
@@ -79,12 +159,15 @@ export class StorageAdapter {
     }
   }
 
-  static removeGitHubToken() {
+  static removeGitHubToken({ broadcast = true } = {}) {
     try {
       localStorage.removeItem(TOKEN_KEY);
       localStorage.removeItem(TOKEN_USER_KEY);
       localStorage.removeItem(TOKEN_PROFILES_KEY);
     } catch {
+    }
+    if (broadcast) {
+      this.broadcastSync('token-profiles-changed', { action: 'removed' });
     }
   }
 
@@ -122,10 +205,13 @@ export class StorageAdapter {
     }
   }
 
-  static saveTokenProfiles(profiles) {
+  static saveTokenProfiles(profiles, { broadcast = true } = {}) {
     try {
       localStorage.setItem(TOKEN_PROFILES_KEY, JSON.stringify(profiles));
     } catch {
+    }
+    if (broadcast) {
+      this.broadcastSync('token-profiles-changed', { count: Array.isArray(profiles) ? profiles.length : 0 });
     }
   }
 

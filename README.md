@@ -6,13 +6,16 @@
 
 > **A 100% client-side, zero-dependency web application (HTML5, CSS3, and Vanilla JavaScript ES Modules) ready for GitHub Pages to explore, select, and extract source code from GitHub repositories into a single `.txt` file (optimized for LLMs/AI), a native `.zip` archive, or a direct on-screen preview/copy interface.**
 
+🌐 **Official Web App:** [https://passella.github.io/github-scrap/](https://passella.github.io/github-scrap/)
+
 ---
 
+[![Web App](https://img.shields.io/badge/Web_App-Online-success.svg)](https://passella.github.io/github-scrap/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Zero Dependencies](https://img.shields.io/badge/dependencies-0-brightgreen.svg)](#-engineering-standards--invariants)
 [![Platform: GitHub Pages](https://img.shields.io/badge/platform-GitHub%20Pages%20Ready-black.svg)](#-deployment-on-github-pages)
 [![Architecture: Ports & Adapters](https://img.shields.io/badge/architecture-Ports%20%26%20Adapters-orange.svg)](#-system-architecture-ports--adapters)
-[![Performance: Uint8Array + Virtualization](https://img.shields.io/badge/performance-Uint8Array%20%2B%20Virtualization-purple.svg)](#10-extreme-performance-for-massive-repositories)
+[![Performance: Uint8Array + Virtualization](https://img.shields.io/badge/performance-Uint8Array%20%2B%20Virtualization-purple.svg)](#11-extreme-performance-for-massive-repositories)
 
 ---
 
@@ -55,12 +58,13 @@ Granular dual-mode extraction balances token efficiency and repository context:
 | **`Reference`** | Zero network downloads ($O(1)$). Uses Git Tree metadata directly. | Structured metadata block: path, file type, exact size, Git SHA hash, GitHub web link (`blob`), and raw download URL. | Binary assets, fonts, media, compressed archives, or massive files (`> 500 KB`). |
 
 * **Smart Defaults Button:** In 1 click, automatically tags binary files (images, archives, executables) and any file exceeding **500 KB** as `Reference`, while keeping source code files in `Scrap` mode.
+* **Interactive Extension Quick-Selection Chips (`#extension-chips-bar`):** Displays a compact horizontal bar in the file list header with the top 10 most frequent file extensions (e.g., `.js (24)`, `.css (4)`, `.md (3)`). Clicking any chip toggles the selection state of all files matching that extension at once, updating visual active states (`.extension-chip.active`), checkboxes, and footer counters in real time.
 * **Null Byte Guard:** Automatically scans downloaded text streams for null bytes (`\0`) and intercepts binary content, preventing corrupt text outputs.
 * **Granular & Batch Toggles:** Toggle individual files between Scrap and Reference with a single click, or apply batch actions across the entire repository.
 
-### 5. 🔍 Quick Finder (`Ctrl+F` with Smooth Scrolling)
-* Keyboard shortcut `Ctrl+F` (or `Cmd+F`) shifts focus instantly to the sticky search bar.
-* Locates matching files in the active list and smoothly scrolls (`scrollIntoView`) to them without hiding or unmounting non-matching files.
+### 5. 🔍 Quick Finder (`Ctrl+F` / `Cmd+F` with Centered Smooth Scrolling)
+* Keyboard shortcut `Ctrl+F` (or `Cmd+F`) shifts focus instantly to the sticky search bar (`#file-filter-input` when a repository is loaded, or `#search-input` otherwise).
+* Locates matching files in the active list and smoothly centers them in the viewport (`scrollIntoView({ block: 'center', behavior: 'smooth' })`) combined with CSS `scroll-padding-block` / `scroll-margin-block`, ensuring matched items are never obscured behind the sticky header or sticky footer.
 * Navigate forward and backward between occurrences using `Enter` and `Shift+Enter`.
 
 ### 6. 📊 Real-Time Size & AI Token Estimation
@@ -69,32 +73,39 @@ Granular dual-mode extraction balances token efficiency and repository context:
   * **Estimated Output Size:** Accurate mathematical projection (`B`, `KB`, `MB`, `GB`) of the final concatenated text output.
   * **Estimated LLM Tokens:** Real-time token approximation calculated based on character-to-token ratios, enabling precise prompt engineering.
 
-### 7. 📦 3 Export Options (Corporate & Anti-DLP Compatible)
-Designed to work across both personal machines and restricted enterprise environments:
+### 7. 📦 3 Export Options, Off-Main-Thread Worker & Global Keyboard Shortcuts
+Designed to work across both personal machines and restricted enterprise environments with **0ms main-thread blocking** via [`src/adapters/export-worker.js`](./src/adapters/export-worker.js):
 
-1. **Generate TXT:** Downloads `<repo>.txt` containing all selected files, cleanly delimited with canonical 80-character headers.
-2. **Generate ZIP:** Packages selected files into a standard `.zip` archive preserving the original repository directory structure, powered by browser-native `CompressionStream('deflate-raw')` and a custom zero-dependency PKZIP binary encoder.
-3. **Preview / Copy:** Opens the compiled output in an accessible modal dialog (`<dialog>`), featuring:
+1. **Generate TXT (`Ctrl+Shift+S` / `Cmd+Shift+S`):** Formats and saves `<repo>.txt` containing all selected files delimited with canonical 80-character headers inside a dedicated Web Worker (`TextFormatter.buildOutputDocument`). Uses the native **File System Access API** (`window.showSaveFilePicker` + `FileSystemWritableFileStream`) for direct-to-disk streaming when supported, with automatic fallback to `Blob` + `<a download>`.
+2. **Generate ZIP (`Ctrl+Shift+Z` / `Cmd+Shift+Z`):** Packages selected files into a standard `.zip` archive preserving the original repository directory structure inside a dedicated Web Worker (`ZipEncoder.encode` with zero-copy `Transferable` `ArrayBuffer`), powered by browser-native `CompressionStream('deflate-raw')` and native `showSaveFilePicker` streaming (with transparent fallback).
+3. **Preview / Copy (`Ctrl+Shift+P` / `Cmd+Shift+P`):** Opens the compiled output in an accessible modal dialog (`<dialog>`), featuring:
    * **1-Click Copy All:** Copies the entire output directly to the system clipboard.
    * **Open in New Tab:** Streams the content into a dedicated browser tab via a temporary `Blob` URL, allowing users in corporate environments with strict DLP download blocks to inspect and save the text without triggering file download alerts.
 
-### 8. 🔑 Optional GitHub Personal Access Token (PAT)
-* **Higher Rate Limits:** Increases the GitHub REST API limit from **60 requests/hour** to **5,000 requests/hour**.
-* **Private Repositories:** Enables browsing and extracting private repositories by passing authenticated bearer headers and utilizing the GitHub Blobs API (`GET /repos/{owner}/{repo}/git/blobs/{sha}`) with Base64 decoding.
-* **Client-Only Storage:** Tokens are stored exclusively in the browser's `localStorage` and sent directly to `api.github.com`. No intermediate server ever sees your credentials.
+### 8. 🔑 Multi-Profile GitHub Token Manager & Encrypted Backup
+* **Higher Rate Limits & Private Repositories:** Increases the GitHub REST API limit from **60 requests/hour** to **5,000 requests/hour** and enables browsing/extracting private repositories via the GitHub Blobs API (`GET /repos/{owner}/{repo}/git/blobs/{sha}`) with Base64 decoding.
+* **Multi-Profile Management:** Save, name, switch between, and delete multiple GitHub PAT profiles (e.g., *Work*, *Personal*) with a 1-click generator link pre-populated with `repo,read:user` scopes.
+* **Live Token Validation & Expiration Alerts:** Validates tokens in real time against `GET /user`, displaying visual status indicators (`valid`, `expiring`, `invalid`, `unverified`), authenticated `@username`, granted OAuth scopes, live rate-limit telemetry, and proactive warnings when a token is close to expiring.
+* **Encrypted Backup & Restore (Web Crypto API):** Export and import saved token profiles as password-protected JSON files encrypted in the browser using **`PBKDF2-SHA256`** (100,000 iterations, random 16-byte salt) and **`AES-256-GCM`** (random 12-byte IV) in [`src/adapters/crypto-adapter.js`](./src/adapters/crypto-adapter.js).
+* **Client-Only Storage:** Tokens are stored exclusively in the browser's `localStorage` and sent directly to `api.github.com`.
 
-### 9. 💾 Smart Persistence & Caching
-* **URL Persistence:** Automatically saves the last queried repository in `localStorage`, pre-populating the search bar on reload.
-* **State by Branch:** Remembers file selection and mode preferences per `owner/repo@branch`.
-* **Session Cache:** Uses `sessionStorage` to cache Git Tree responses, eliminating redundant API round-trips when switching between tabs or branches.
+### 9. 📲 Full Offline-Capable Progressive Web App (PWA)
+* **Installable Native Experience:** Includes [`manifest.json`](./manifest.json), vector icon [`favicon.svg`](./favicon.svg), and a discrete **`#install-pwa-button`** in the top bar that automatically appears when the browser fires `beforeinstallprompt`.
+* **Offline App Shell Service Worker ([`sw.js`](./sw.js)):** Caches the complete application shell (`index.html`, `style.css`, `app.js`, `manifest.json`, `favicon.svg`, and all ES Modules under `src/`) using a **Stale-While-Revalidate** strategy for instant offline startup, while enforcing **Network-Only** for `api.github.com` and `raw.githubusercontent.com`.
 
-### 10. 🏎️ Extreme Performance for Massive Repositories
+### 10. 💾 Smart Persistence, Compressed IndexedDB Offline Cache & Multi-Tab Sync
+* **URL & Branch Persistence:** Automatically saves the last queried repository and remembers file selection and mode preferences per `owner/repo@branch` in `localStorage`.
+* **Compressed IndexedDB Offline Tree Cache ([`src/adapters/tree-cache-adapter.js`](./src/adapters/tree-cache-adapter.js)):** Persists repository metadata, branch lists, and full Git Trees (`owner/repo@branch`) in `IndexedDB` (`github-scrap-cache` / `git-trees`) compressed with `CompressionStream('gzip')` / `DecompressionStream('gzip')` (with 24h online TTL and automatic unlimited offline snapshot fallback when the network is unreachable).
+* **Real-Time Multi-Tab Synchronization:** Synchronizes active GitHub Token profile changes, profile additions/deletions, and live API Rate Limit badges across all open browser tabs via `BroadcastChannel('github-scrap:sync')` and `window.addEventListener('storage')`.
+
+### 11. 🏎️ Extreme Performance for Massive Repositories
 Engineered to handle repositories with tens of thousands of files:
 * **Contiguous Memory (`Uint8Array`):** File selection and extraction modes are indexed in contiguous typed arrays (`Uint8Array`), achieving $O(1)$ reads/writes with negligible memory overhead.
 * **Event Delegation:** A single centralized event listener on `#file-list` handles all user interactions across thousands of rows.
 * **Batch DOM Updates:** Builds list items off-screen using `DocumentFragment`, triggering only a single browser reflow and repaint.
 * **CSS Virtualization:** Employs `content-visibility: auto` and `contain-intrinsic-size` to skip rendering of off-screen list elements, maintaining a fluid 60/120 FPS scroll experience.
 * **Controlled Concurrency Pool:** Downloads are throttled through a 6-worker concurrency pool, preventing browser HTTP connection exhaustion while maintaining strict file ordering.
+* **Dedicated Export Web Worker ([`src/adapters/export-worker.js`](./src/adapters/export-worker.js)):** Executes heavy PKZIP binary encoding (`ZipEncoder.encode` with zero-copy `[zipBytes.buffer]` `Transferable`) and massive text document compilation (`TextFormatter.buildOutputDocument`) off the main thread, with automatic in-thread fallback when `Worker` is unavailable.
 * **Atomic Cancellation:** Integrated with `AbortController` to terminate all active network requests when a new search or branch switch occurs.
 
 ---
@@ -150,17 +161,21 @@ flowchart LR
 
 | Layer | Module / File | Responsibility |
 | :--- | :--- | :--- |
-| **Presentation** | [`index.html`](./index.html) | Semantic HTML5 structure with accessible forms, progress indicator, and dialog modals. |
-| **Presentation** | [`style.css`](./style.css) | Responsive CSS3 styling with auto dark/light theme, sticky toolbars, and grid alignment. |
-| **Composition Root** | [`app.js`](./app.js) | Main application entry point, dependency wiring, and runtime event coordination. |
+| **Presentation** | [`index.html`](./index.html) | Semantic HTML5 structure with accessible forms, progress indicator, PWA install button (`#install-pwa-button`), and dialog modals. |
+| **Presentation** | [`style.css`](./style.css) | Responsive CSS3 styling with sticky toolbars, `scroll-padding-block` / `scroll-margin-block`, and grid alignment. |
+| **PWA / Offline** | [`manifest.json`](./manifest.json) / [`sw.js`](./sw.js) / [`favicon.svg`](./favicon.svg) | Web App Manifest, vector icon, and Service Worker caching App Shell with Stale-While-Revalidate. |
+| **Composition Root** | [`app.js`](./app.js) | Main application entry point, Service Worker registration, dependency wiring, and runtime event coordination. |
 | **Pure Domain** | [`src/domain/repo-parser.js`](./src/domain/repo-parser.js) | Validates, normalizes, and parses repository inputs (`owner/repo`, web URLs, git URLs, branches). |
 | **Pure Domain** | [`src/domain/file-classifier.js`](./src/domain/file-classifier.js) | Deterministic binary file classification, null-byte checks, and Smart Defaults evaluation. |
 | **Pure Domain** | [`src/domain/text-formatter.js`](./src/domain/text-formatter.js) | Generates canonical 80-column delimited output, reference blocks, and token estimations. |
 | **Driven Adapter** | [`src/adapters/i18n.js`](./src/adapters/i18n.js) | Multi-language translation dictionaries and browser locale detection (`pt-BR`, `es`, `en`). |
-| **Driven Adapter** | [`src/adapters/github-client.js`](./src/adapters/github-client.js) | HTTP communication with GitHub REST API (trees, branches, blobs, rate limit telemetry). |
+| **Driven Adapter** | [`src/adapters/github-client.js`](./src/adapters/github-client.js) | HTTP communication with GitHub REST API (trees, branches, blobs, token validation, rate limit telemetry). |
 | **Driven Adapter** | [`src/adapters/zip-encoder.js`](./src/adapters/zip-encoder.js) | Native binary PKZIP encoder with CRC-32 and streaming `deflate-raw` compression. |
-| **Driven Adapter** | [`src/adapters/storage-adapter.js`](./src/adapters/storage-adapter.js) | Fault-tolerant persistence wrapper for `localStorage` and `sessionStorage`. |
-| **Driving Adapter** | [`src/adapters/dom-controller.js`](./src/adapters/dom-controller.js) | DOM event handling, list rendering, HUD progress telemetry, and preview modals. |
+| **Driven Adapter** | [`src/adapters/export-worker.js`](./src/adapters/export-worker.js) | Dedicated Module Web Worker and client with `Transferable` zero-copy ZIP encoding and text formatting (plus in-thread fallback). |
+| **Driven Adapter** | [`src/adapters/storage-adapter.js`](./src/adapters/storage-adapter.js) | Fault-tolerant persistence wrapper for `localStorage`, multi-profile token state, and multi-tab `BroadcastChannel` sync. |
+| **Driven Adapter** | [`src/adapters/tree-cache-adapter.js`](./src/adapters/tree-cache-adapter.js) | Compressed `IndexedDB` (`CompressionStream('gzip')`) offline cache for Git Trees and branches with automatic fallback. |
+| **Driven Adapter** | [`src/adapters/crypto-adapter.js`](./src/adapters/crypto-adapter.js) | Browser-native Web Crypto API adapter (`PBKDF2-SHA256` + `AES-256-GCM`) for encrypted profile backups. |
+| **Driving Adapter** | [`src/adapters/dom-controller.js`](./src/adapters/dom-controller.js) | DOM event handling, extension chips (`#extension-chips-bar`), `Ctrl+Shift+S/Z/P` shortcuts, centered quick finder, `showSaveFilePicker`, and modals. |
 
 ---
 
@@ -222,7 +237,12 @@ php -S localhost:8000
 
 ## 🌐 Deployment on GitHub Pages
 
-Deploying GitHub Scrap to **GitHub Pages** takes less than a minute:
+The application is deployed and publicly accessible at:
+```
+https://passella.github.io/github-scrap/
+```
+
+To deploy your own instance to **GitHub Pages**:
 
 1. Push the repository to GitHub.
 2. In your GitHub repository, navigate to **Settings** > **Pages**.
@@ -232,7 +252,7 @@ Deploying GitHub Scrap to **GitHub Pages** takes less than a minute:
 4. Click **Save**.
 5. Within moments, your application will be live at:
    ```
-   https://<your-username>.github.io/<repository-name>/
+   https://passella.github.io/github-scrap/
    ```
 
 ---

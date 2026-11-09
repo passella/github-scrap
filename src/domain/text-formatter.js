@@ -133,6 +133,10 @@ export function formatConcatenatedOutput(results, lang = 'en', i18n = null) {
   return blocks.join('\n');
 }
 
+export function buildOutputDocument(results, lang = 'en', i18n = null) {
+  return formatConcatenatedOutput(results, lang, i18n);
+}
+
 export function buildDiagnosticReport(data, lang = 'en') {
   const locale = LOCALE_MAP[lang] || 'en-US';
   const lines = [
@@ -148,3 +152,14 @@ export function buildDiagnosticReport(data, lang = 'en') {
   ];
   return lines.join('\n');
 }
+
+export const TextFormatter = {
+  SEPARATOR,
+  formatFileSize,
+  formatTokenCount,
+  formatTextBlock,
+  formatReferenceBlock,
+  formatConcatenatedOutput,
+  buildOutputDocument,
+  buildDiagnosticReport,
+};

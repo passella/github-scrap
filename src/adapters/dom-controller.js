@@ -14,11 +14,60 @@ import {
 } from '../domain/text-formatter.js';
 import { TRANSLATIONS, detectLanguage } from './i18n.js';
 import { GitHubClient, isValidGitHubTokenSyntax } from './github-client.js';
-import { ZipBuilder } from './zip-encoder.js';
-import { StorageAdapter } from './storage-adapter.js';
+import { ZipBuilder, ZipEncoder } from './zip-encoder.js';
+import { ExportWorkerClient } from './export-worker.js';
+import { StorageAdapter, TreeCacheAdapter } from './storage-adapter.js';
 import { CryptoAdapter } from './crypto-adapter.js';
 
 export class FileDownloadAdapter {
+  static async acquireSaveFileHandle(filename, format = 'txt') {
+    if (typeof window === 'undefined' || typeof window.showSaveFilePicker !== 'function') {
+      return { aborted: false, handle: null };
+    }
+    try {
+      const types = format === 'zip'
+        ? [
+            {
+              description: 'ZIP Archive (.zip)',
+              accept: { 'application/zip': ['.zip'] },
+            },
+          ]
+        : [
+            {
+              description: 'Text Document (.txt)',
+              accept: { 'text/plain': ['.txt'] },
+            },
+          ];
+      const handle = await window.showSaveFilePicker({
+        suggestedName: filename,
+        types,
+      });
+      return { aborted: false, handle: handle || null };
+    } catch (err) {
+      if (err && err.name === 'AbortError') {
+        return { aborted: true, handle: null };
+      }
+      return { aborted: false, handle: null };
+    }
+  }
+
+  static async writeToFileHandleOrDownload(fileHandle, contentOrBlob, filename) {
+    if (fileHandle && typeof fileHandle.createWritable === 'function') {
+      try {
+        const writable = await fileHandle.createWritable();
+        await writable.write(contentOrBlob);
+        await writable.close();
+        return true;
+      } catch (err) {
+        if (err && err.name === 'AbortError') {
+          throw err;
+        }
+      }
+    }
+    this.triggerFileDownload(contentOrBlob, filename);
+    return false;
+  }
+
   static triggerFileDownload(contentOrBlob, filename) {
     const blob = contentOrBlob instanceof Blob
       ? contentOrBlob
@@ -398,6 +447,9 @@ export function applyStaticTranslations(dom, lang) {
     const tokenLabel = document.querySelector('#token-button-label');
     if (tokenLabel) tokenLabel.textContent = i18n.tokenButton;
 
+    const installPwaLabel = document.querySelector('#install-pwa-label');
+    if (installPwaLabel) installPwaLabel.textContent = i18n.installAppBtn;
+
     const tokenDialogTitle = document.querySelector('#token-dialog-title');
     if (tokenDialogTitle) tokenDialogTitle.textContent = i18n.tokenDialogTitle;
 
@@ -445,6 +497,16 @@ export function applyStaticTranslations(dom, lang) {
 
   if (dom.tokenButton) {
     dom.tokenButton.setAttribute('aria-label', i18n.tokenButtonAria);
+  }
+
+  const installPwaBtn = dom.installPwaButton || (typeof document !== 'undefined' ? document.querySelector('#install-pwa-button') : null);
+  if (installPwaBtn) {
+    const installPwaLabel = typeof installPwaBtn.querySelector === 'function' ? installPwaBtn.querySelector('#install-pwa-label') : null;
+    if (!installPwaLabel && !(typeof document !== 'undefined' && document.querySelector('#install-pwa-label'))) {
+      installPwaBtn.textContent = i18n.installAppBtn;
+    }
+    installPwaBtn.title = i18n.installAppTitle;
+    installPwaBtn.setAttribute('aria-label', i18n.installAppTitle);
   }
 
   if (dom.tokenInput) {
@@ -503,6 +565,23 @@ export function applyStaticTranslations(dom, lang) {
   if (dom.generationProgressbar) {
     dom.generationProgressbar.setAttribute('aria-label', i18n.progressAriaLabel);
   }
+
+  const extChipsBar = dom.extensionChipsBar || (typeof document !== 'undefined' ? document.querySelector('#extension-chips-bar') : null);
+  if (extChipsBar && i18n.extensionChipsAriaLabel) {
+    extChipsBar.setAttribute('aria-label', i18n.extensionChipsAriaLabel);
+  }
+
+  if (dom.generateButton && i18n.generateTxtTitle) {
+    dom.generateButton.title = i18n.generateTxtTitle;
+  }
+
+  if (dom.generateZipButton && i18n.generateZipTitle) {
+    dom.generateZipButton.title = i18n.generateZipTitle;
+  }
+
+  if (dom.previewButton && i18n.previewBtnTitle) {
+    dom.previewButton.title = i18n.previewBtnTitle;
+  }
 }
 
 export class DomController {
@@ -514,6 +593,7 @@ export class DomController {
     this.activeFilterQuery = '';
     this.matchingIndices = [];
     this.currentMatchPointer = -1;
+    this.deferredInstallPrompt = null;
     this.lang = detectLanguage();
     this.i18n = TRANSLATIONS[this.lang] || TRANSLATIONS['en'];
   }
@@ -526,6 +606,23 @@ export class DomController {
     GitHubClient.onRateLimitChange((rateLimit) => {
       this.updateRateLimitBadge(rateLimit);
     });
+
+    if (!GitHubClient.lastRateLimit) {
+      const storedRateLimit = StorageAdapter.getLastRateLimit();
+      if (storedRateLimit) {
+        this.updateRateLimitBadge(storedRateLimit);
+      }
+    }
+
+    StorageAdapter.onSync((message) => {
+      this.handleCrossTabSync(message);
+    });
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('storage', (event) => {
+        this.handleStorageEvent(event);
+      });
+    }
 
     if (StorageAdapter.hasGitHubToken()) {
       const savedToken = StorageAdapter.getGitHubToken();
@@ -578,20 +675,36 @@ export class DomController {
 
     if (typeof window !== 'undefined') {
       window.addEventListener('keydown', (e) => {
-        if ((e.ctrlKey || e.metaKey) && e.key && e.key.toLowerCase() === 'f') {
-          e.preventDefault();
-          if (this.dom.resultsSection && !this.dom.resultsSection.hidden && this.dom.fileFilterInput) {
-            this.dom.fileFilterInput.focus();
-            if (typeof this.dom.fileFilterInput.select === 'function') {
-              this.dom.fileFilterInput.select();
-            }
-          } else if (this.dom.input) {
-            this.dom.input.focus();
-            if (typeof this.dom.input.select === 'function') {
-              this.dom.input.select();
-            }
+        this.handleGlobalKeyDown(e);
+      });
+
+      const installBtn = this.dom.installPwaButton || (typeof document !== 'undefined' ? document.querySelector('#install-pwa-button') : null);
+      window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        this.deferredInstallPrompt = e;
+        if (installBtn) {
+          installBtn.hidden = false;
+          if (installBtn.classList && typeof installBtn.classList.remove === 'function') {
+            installBtn.classList.remove('hidden');
           }
         }
+      });
+
+      window.addEventListener('appinstalled', () => {
+        this.deferredInstallPrompt = null;
+        if (installBtn) {
+          installBtn.hidden = true;
+          if (installBtn.classList && typeof installBtn.classList.add === 'function') {
+            installBtn.classList.add('hidden');
+          }
+        }
+      });
+    }
+
+    const installPwaButton = this.dom.installPwaButton || (typeof document !== 'undefined' ? document.querySelector('#install-pwa-button') : null);
+    if (installPwaButton) {
+      installPwaButton.addEventListener('click', () => {
+        this.handleInstallPwaClick();
       });
     }
 
@@ -645,6 +758,20 @@ export class DomController {
     if (tokenCloseIconBtn) {
       tokenCloseIconBtn.addEventListener('click', () => {
         this.closeTokenDialog();
+      });
+    }
+
+    const tokenDialog = this.dom.tokenDialog || (typeof document !== 'undefined' ? document.querySelector('#token-dialog') : null);
+    if (tokenDialog) {
+      tokenDialog.addEventListener('close', () => {
+        if (typeof document !== 'undefined' && document.body) {
+          document.body.classList.remove('modal-open');
+        }
+      });
+      tokenDialog.addEventListener('click', (e) => {
+        if (e.target === tokenDialog) {
+          this.closeTokenDialog();
+        }
       });
     }
 
@@ -708,7 +835,18 @@ export class DomController {
 
     if (this.dom.previewButton) {
       this.dom.previewButton.addEventListener('click', () => {
-        this.executePreview();
+        this.handlePreviewClick();
+      });
+    }
+
+    const extChipsBar = this.dom.extensionChipsBar || (typeof document !== 'undefined' ? document.querySelector('#extension-chips-bar') : null);
+    if (extChipsBar) {
+      extChipsBar.addEventListener('click', (e) => {
+        if (!e || !e.target || typeof e.target.closest !== 'function') return;
+        const chip = e.target.closest('.extension-chip');
+        if (chip && chip.dataset && chip.dataset.ext) {
+          this.toggleExtensionSelection(chip.dataset.ext);
+        }
       });
     }
 
@@ -731,6 +869,91 @@ export class DomController {
       closePreviewBtn.addEventListener('click', () => {
         this.closePreviewDialog();
       });
+    }
+
+    const previewDialog = this.dom.previewDialog || (typeof document !== 'undefined' ? document.querySelector('#preview-dialog') : null);
+    if (previewDialog) {
+      previewDialog.addEventListener('close', () => {
+        if (typeof document !== 'undefined' && document.body) {
+          document.body.classList.remove('modal-open');
+        }
+      });
+      previewDialog.addEventListener('click', (e) => {
+        if (e.target === previewDialog) {
+          this.closePreviewDialog();
+        }
+      });
+    }
+  }
+
+  handleGlobalKeyDown(e) {
+    if (!e || !(e.ctrlKey || e.metaKey) || !e.key) return;
+    const keyLower = e.key.toLowerCase();
+
+    if (e.shiftKey) {
+      if (keyLower === 's') {
+        const btn = this.dom.generateButton;
+        const canRun = btn ? !btn.disabled : Boolean(this.currentRepoContext && this.currentRepoContext.selectedCount > 0 && !this.activeGenerationAbortController);
+        if (canRun) {
+          if (typeof e.preventDefault === 'function') e.preventDefault();
+          this.handleGenerateClick();
+        }
+        return;
+      }
+      if (keyLower === 'z') {
+        const btn = this.dom.generateZipButton;
+        const canRun = btn ? !btn.disabled : Boolean(this.currentRepoContext && this.currentRepoContext.selectedCount > 0 && !this.activeGenerationAbortController);
+        if (canRun) {
+          if (typeof e.preventDefault === 'function') e.preventDefault();
+          this.handleGenerateZipClick();
+        }
+        return;
+      }
+      if (keyLower === 'p') {
+        const btn = this.dom.previewButton;
+        const canRun = btn ? !btn.disabled : Boolean(this.currentRepoContext && this.currentRepoContext.selectedCount > 0 && !this.activeGenerationAbortController);
+        if (canRun) {
+          if (typeof e.preventDefault === 'function') e.preventDefault();
+          this.handlePreviewClick();
+        }
+        return;
+      }
+      return;
+    }
+
+    if (keyLower === 'f') {
+      if (typeof e.preventDefault === 'function') e.preventDefault();
+      if (this.dom.resultsSection && !this.dom.resultsSection.hidden && this.dom.fileFilterInput) {
+        this.dom.fileFilterInput.focus();
+        if (typeof this.dom.fileFilterInput.select === 'function') {
+          this.dom.fileFilterInput.select();
+        }
+      } else if (this.dom.input) {
+        this.dom.input.focus();
+        if (typeof this.dom.input.select === 'function') {
+          this.dom.input.select();
+        }
+      }
+    }
+  }
+
+  async handleInstallPwaClick() {
+    if (!this.deferredInstallPrompt) return;
+    const promptEvent = this.deferredInstallPrompt;
+    this.deferredInstallPrompt = null;
+    try {
+      await promptEvent.prompt();
+      if (promptEvent.userChoice) {
+        await promptEvent.userChoice;
+      }
+    } catch {
+    }
+    const installBtn = this.dom.installPwaButton || (typeof document !== 'undefined' ? document.querySelector('#install-pwa-button') : null);
+    if (installBtn) {
+      installBtn.hidden = true;
+      if (installBtn.classList && typeof installBtn.classList.add === 'function') {
+        installBtn.classList.add('hidden');
+      }
     }
   }
 
@@ -757,6 +980,49 @@ export class DomController {
         this.dom.rateLimitBadge.classList.add('rate-limit-danger');
       } else if (remaining <= 15) {
         this.dom.rateLimitBadge.classList.add('rate-limit-warning');
+      }
+    }
+  }
+
+  updateTokenIndicator() {
+    this.updateTokenUI();
+  }
+
+  handleCrossTabSync(message) {
+    if (!message || !message.type) return;
+    if (message.type === 'token-profiles-changed') {
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.clear();
+      }
+      TreeCacheAdapter.clear();
+      this.updateTokenIndicator();
+      this.renderTokenProfilesList();
+    } else if (message.type === 'rate-limit-changed' && message.rateLimit) {
+      GitHubClient.notifyRateLimitChange(message.rateLimit, { fromSync: true });
+      this.updateRateLimitBadge(message.rateLimit);
+    }
+  }
+
+  handleStorageEvent(event) {
+    if (!event) return;
+    const key = event.key;
+    if (
+      key === null ||
+      key === 'github-scrap:token-profiles' ||
+      key === 'github-scrap:github-token' ||
+      key === 'github-scrap:github-token-user'
+    ) {
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.clear();
+      }
+      TreeCacheAdapter.clear();
+      this.updateTokenIndicator();
+      this.renderTokenProfilesList();
+    } else if (key === 'github-scrap:last-rate-limit') {
+      const rateLimit = StorageAdapter.getLastRateLimit();
+      if (rateLimit) {
+        GitHubClient.notifyRateLimitChange(rateLimit, { fromSync: true });
+        this.updateRateLimitBadge(rateLimit);
       }
     }
   }
@@ -921,6 +1187,7 @@ export class DomController {
     if (typeof sessionStorage !== 'undefined') {
       sessionStorage.clear();
     }
+    TreeCacheAdapter.clear();
     this.updateTokenUI();
     this.renderTokenProfilesList();
     ToastNotificationAdapter.showSuccess(
@@ -935,6 +1202,7 @@ export class DomController {
     if (typeof sessionStorage !== 'undefined') {
       sessionStorage.clear();
     }
+    TreeCacheAdapter.clear();
     this.updateTokenUI();
     this.renderTokenProfilesList();
     ToastNotificationAdapter.showSuccess(
@@ -944,6 +1212,9 @@ export class DomController {
   }
 
   openTokenDialog() {
+    if (typeof document !== 'undefined' && document.body) {
+      document.body.classList.add('modal-open');
+    }
     this.clearTokenValidationStatus();
     this.updateTokenUI();
     this.renderTokenProfilesList();
@@ -957,6 +1228,9 @@ export class DomController {
   }
 
   closeTokenDialog() {
+    if (typeof document !== 'undefined' && document.body) {
+      document.body.classList.remove('modal-open');
+    }
     this.clearTokenValidationStatus();
     const dialog = this.dom.tokenDialog || (typeof document !== 'undefined' ? document.querySelector('#token-dialog') : null);
     if (dialog && typeof dialog.close === 'function') {
@@ -1024,6 +1298,7 @@ export class DomController {
         if (typeof sessionStorage !== 'undefined') {
           sessionStorage.clear();
         }
+        TreeCacheAdapter.clear();
         this.updateTokenUI();
         this.renderTokenProfilesList();
         this.clearTokenValidationStatus();
@@ -1083,6 +1358,7 @@ export class DomController {
     if (typeof sessionStorage !== 'undefined') {
       sessionStorage.clear();
     }
+    TreeCacheAdapter.clear();
     this.updateTokenUI();
     this.renderTokenProfilesList();
     this.clearTokenValidationStatus();
@@ -1166,6 +1442,7 @@ export class DomController {
       if (typeof sessionStorage !== 'undefined') {
         sessionStorage.clear();
       }
+      TreeCacheAdapter.clear();
       this.updateTokenUI();
       this.renderTokenProfilesList();
       ToastNotificationAdapter.showSuccess(
@@ -1192,6 +1469,9 @@ export class DomController {
   }
 
   openPreviewDialog(filename, formattedSize, content) {
+    if (typeof document !== 'undefined' && document.body) {
+      document.body.classList.add('modal-open');
+    }
     const dialog = this.dom.previewDialog || (typeof document !== 'undefined' ? document.querySelector('#preview-dialog') : null);
     const textarea = this.dom.previewTextarea || (typeof document !== 'undefined' ? document.querySelector('#preview-textarea') : null);
     const title = this.dom.previewTitle || (typeof document !== 'undefined' ? document.querySelector('#preview-title') : null);
@@ -1210,6 +1490,9 @@ export class DomController {
   }
 
   closePreviewDialog() {
+    if (typeof document !== 'undefined' && document.body) {
+      document.body.classList.remove('modal-open');
+    }
     const dialog = this.dom.previewDialog || (typeof document !== 'undefined' ? document.querySelector('#preview-dialog') : null);
     if (dialog && typeof dialog.close === 'function') {
       dialog.close();
@@ -1726,6 +2009,7 @@ export class DomController {
       this.syncSelectAllCheckbox();
     }
 
+    this.renderExtensionChips();
     this.updateMasterToggleState();
     this.updateGenerateButtonState();
 
@@ -1854,7 +2138,7 @@ export class DomController {
       if (activeItem) {
         activeItem.classList.add('file-item-active-match');
         if (typeof activeItem.scrollIntoView === 'function') {
-          activeItem.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+          activeItem.scrollIntoView({ block: 'center', behavior: 'smooth' });
         }
       }
       if (this.dom.filterFeedback) {
@@ -1945,6 +2229,170 @@ export class DomController {
     this.currentRepoContext.totalRefCount = totRef;
   }
 
+  computeExtensionGroups() {
+    if (!this.currentRepoContext || !Array.isArray(this.currentRepoContext.files)) {
+      return [];
+    }
+    const { files } = this.currentRepoContext;
+    const extMap = new Map();
+    for (let i = 0; i < files.length; i += 1) {
+      const ext = getFileType(files[i].path, this.lang, this.i18n);
+      let group = extMap.get(ext);
+      if (!group) {
+        group = [];
+        extMap.set(ext, group);
+      }
+      group.push(i);
+    }
+    const entries = Array.from(extMap.entries()).map(([ext, indices]) => ({ ext, indices }));
+    entries.sort((a, b) => {
+      if (b.indices.length !== a.indices.length) {
+        return b.indices.length - a.indices.length;
+      }
+      return a.ext.localeCompare(b.ext);
+    });
+    return entries.slice(0, 10);
+  }
+
+  renderExtensionChips() {
+    const bar = this.dom.extensionChipsBar || (typeof document !== 'undefined' ? document.querySelector('#extension-chips-bar') : null);
+    if (!bar) return;
+
+    if (!this.currentRepoContext || !this.currentRepoContext.files || this.currentRepoContext.files.length === 0) {
+      bar.hidden = true;
+      if (bar.classList && typeof bar.classList.add === 'function') {
+        bar.classList.add('hidden');
+      }
+      if (typeof bar.replaceChildren === 'function') {
+        bar.replaceChildren();
+      } else {
+        bar.innerHTML = '';
+      }
+      return;
+    }
+
+    const groups = this.computeExtensionGroups();
+    this.currentRepoContext.extensionGroups = groups;
+
+    if (groups.length === 0) {
+      bar.hidden = true;
+      if (bar.classList && typeof bar.classList.add === 'function') {
+        bar.classList.add('hidden');
+      }
+      return;
+    }
+
+    bar.hidden = false;
+    if (bar.classList && typeof bar.classList.remove === 'function') {
+      bar.classList.remove('hidden');
+    }
+    if (typeof bar.replaceChildren === 'function') {
+      bar.replaceChildren();
+    } else {
+      bar.innerHTML = '';
+    }
+
+    const { selectedFlags } = this.currentRepoContext;
+
+    for (let g = 0; g < groups.length; g += 1) {
+      const { ext, indices } = groups[g];
+      let allSelected = indices.length > 0;
+      for (let k = 0; k < indices.length; k += 1) {
+        if (selectedFlags[indices[k]] !== 1) {
+          allSelected = false;
+          break;
+        }
+      }
+
+      if (typeof document !== 'undefined' && typeof document.createElement === 'function') {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'extension-chip' + (allSelected ? ' active' : '');
+        chip.dataset.ext = ext;
+        chip.setAttribute('aria-pressed', String(allSelected));
+        chip.textContent = ext + ' (' + indices.length + ')';
+        if (this.i18n && typeof this.i18n.extensionChipTitle === 'function') {
+          chip.title = this.i18n.extensionChipTitle(ext, indices.length);
+        }
+        bar.appendChild(chip);
+      }
+    }
+  }
+
+  updateExtensionChipsState() {
+    const bar = this.dom.extensionChipsBar || (typeof document !== 'undefined' ? document.querySelector('#extension-chips-bar') : null);
+    if (!bar || !this.currentRepoContext) return;
+
+    const groups = this.currentRepoContext.extensionGroups || this.computeExtensionGroups();
+    this.currentRepoContext.extensionGroups = groups;
+    const { selectedFlags } = this.currentRepoContext;
+
+    const children = bar.children || [];
+    for (let i = 0; i < children.length; i += 1) {
+      const chip = children[i];
+      const ext = chip && chip.dataset ? chip.dataset.ext : null;
+      if (!ext) continue;
+      const group = groups.find((g) => g.ext === ext);
+      if (!group) continue;
+      let allSelected = group.indices.length > 0;
+      for (let k = 0; k < group.indices.length; k += 1) {
+        if (selectedFlags[group.indices[k]] !== 1) {
+          allSelected = false;
+          break;
+        }
+      }
+      if (chip.classList && typeof chip.classList.toggle === 'function') {
+        chip.classList.toggle('active', allSelected);
+      }
+      if (typeof chip.setAttribute === 'function') {
+        chip.setAttribute('aria-pressed', String(allSelected));
+      }
+    }
+  }
+
+  toggleExtensionSelection(ext) {
+    if (!this.currentRepoContext || !ext) return;
+    const { files, selectedFlags } = this.currentRepoContext;
+    const matchingIndices = [];
+    for (let i = 0; i < files.length; i += 1) {
+      if (getFileType(files[i].path, this.lang, this.i18n) === ext) {
+        matchingIndices.push(i);
+      }
+    }
+    if (matchingIndices.length === 0) return;
+
+    let allSelected = true;
+    for (let i = 0; i < matchingIndices.length; i += 1) {
+      if (selectedFlags[matchingIndices[i]] !== 1) {
+        allSelected = false;
+        break;
+      }
+    }
+
+    const shouldSelect = !allSelected;
+    const newVal = shouldSelect ? 1 : 0;
+    const items = this.dom.fileList ? this.dom.fileList.children : [];
+
+    for (let i = 0; i < matchingIndices.length; i += 1) {
+      const idx = matchingIndices[i];
+      selectedFlags[idx] = newVal;
+      const item = items[idx];
+      if (item) {
+        const checkbox = typeof item.querySelector === 'function' ? item.querySelector('.file-checkbox') : null;
+        if (checkbox) checkbox.checked = shouldSelect;
+        if (item.classList && typeof item.classList.toggle === 'function') {
+          item.classList.toggle('file-item-unselected', !shouldSelect);
+        }
+      }
+    }
+
+    this.recalculateCounts();
+    this.syncSelectAllCheckbox();
+    this.updateExtensionChipsState();
+    this.updateGenerateButtonState();
+    this.saveCurrentRepoPreferences();
+  }
+
   handleCheckboxToggle(index, isChecked) {
     const val = isChecked ? 1 : 0;
     if (this.currentRepoContext.selectedFlags[index] === val) return;
@@ -1958,6 +2406,7 @@ export class DomController {
     }
 
     this.syncSelectAllCheckbox();
+    this.updateExtensionChipsState();
     this.updateGenerateButtonState();
     this.saveCurrentRepoPreferences();
   }
@@ -2075,6 +2524,7 @@ export class DomController {
 
     this.recalculateCounts();
     this.syncSelectAllCheckbox();
+    this.updateExtensionChipsState();
     this.updateGenerateButtonState();
     this.saveCurrentRepoPreferences();
   }
@@ -2119,6 +2569,7 @@ export class DomController {
 
     this.recalculateCounts();
     this.syncSelectAllCheckbox();
+    this.updateExtensionChipsState();
     this.updateMasterToggleState();
     this.updateGenerateButtonState();
 
@@ -2191,21 +2642,69 @@ export class DomController {
     }
   }
 
-  updateGenerationProgress(completed, total, currentPath = '') {
+  showProgress(completed = 0, total = 0, currentPath = '', completedBytes = 0, totalBytes = 0) {
     if (!this.dom.generationProgressContainer) return;
     this.dom.generationProgressContainer.hidden = false;
+    if (this.dom.generationProgressContainer.style) {
+      this.dom.generationProgressContainer.style.display = 'flex';
+    }
+    this.updateProgress(completed, total, currentPath, completedBytes, totalBytes);
+  }
 
-    const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
-    if (this.dom.generationProgressBarFill) {
-      this.dom.generationProgressBarFill.style.inlineSize = pct + '%';
+  updateProgress(completed, total, currentPath = '', completedBytes = 0, totalBytes = 0) {
+    if (!this.dom.generationProgressContainer) return;
+    this.dom.generationProgressContainer.hidden = false;
+    if (this.dom.generationProgressContainer.style) {
+      this.dom.generationProgressContainer.style.display = 'flex';
+    }
+
+    const pct = totalBytes > 0
+      ? Math.min(100, Math.round((completedBytes / totalBytes) * 100))
+      : (total > 0 ? Math.min(100, Math.round((completed / total) * 100)) : 0);
+
+    const fillEl = this.dom.generationProgressBarFill || (typeof document !== 'undefined' ? (document.querySelector('#progress-bar-fill') || document.querySelector('#progress-fill')) : null);
+    if (fillEl && fillEl.style) {
+      fillEl.style.width = pct + '%';
+      fillEl.style.inlineSize = pct + '%';
     }
     if (this.dom.generationProgressbar) {
       this.dom.generationProgressbar.setAttribute('aria-valuenow', String(pct));
     }
-    if (this.dom.progressStatusText) {
+    const textEl = this.dom.progressStatusText || (typeof document !== 'undefined' ? (document.querySelector('#progress-status-text') || document.querySelector('#progress-text')) : null);
+    if (textEl) {
       const pathSuffix = currentPath ? ' - ' + currentPath : '';
-      this.dom.progressStatusText.textContent = pct + '% (' + completed + '/' + total + ')' + pathSuffix;
+      if (totalBytes > 0) {
+        const bytesFormatted = formatFileSize(completedBytes, this.lang) + ' / ' + formatFileSize(totalBytes, this.lang);
+        textEl.textContent = pct + '% (' + completed + '/' + total + ' • ' + bytesFormatted + ')' + pathSuffix;
+      } else {
+        textEl.textContent = pct + '% (' + completed + '/' + total + ')' + pathSuffix;
+      }
     }
+  }
+
+  hideProgress() {
+    if (this.dom.generationProgressContainer) {
+      this.dom.generationProgressContainer.hidden = true;
+      if (this.dom.generationProgressContainer.style) {
+        this.dom.generationProgressContainer.style.display = 'none';
+      }
+    }
+    const fillEl = this.dom.generationProgressBarFill || (typeof document !== 'undefined' ? (document.querySelector('#progress-bar-fill') || document.querySelector('#progress-fill')) : null);
+    if (fillEl && fillEl.style) {
+      fillEl.style.width = '0%';
+      fillEl.style.inlineSize = '0%';
+    }
+    if (this.dom.generationProgressbar) {
+      this.dom.generationProgressbar.setAttribute('aria-valuenow', '0');
+    }
+    const textEl = this.dom.progressStatusText || (typeof document !== 'undefined' ? (document.querySelector('#progress-status-text') || document.querySelector('#progress-text')) : null);
+    if (textEl) {
+      textEl.textContent = '';
+    }
+  }
+
+  updateGenerationProgress(completed, total, currentPath = '', completedBytes = 0, totalBytes = 0) {
+    return this.updateProgress(completed, total, currentPath, completedBytes, totalBytes);
   }
 
   async compileSelectedText() {
@@ -2220,11 +2719,18 @@ export class DomController {
     }
 
     const totalSelected = selectedFileIndices.length;
-    this.updateGenerationProgress(0, totalSelected, this.i18n.progressPreparing);
+    let totalBytes = 0;
+    for (let i = 0; i < totalSelected; i += 1) {
+      const fileIdx = selectedFileIndices[i];
+      totalBytes += files[fileIdx].size || 0;
+    }
+
+    let completedCount = 0;
+    let completedBytes = 0;
+    this.showProgress(0, totalSelected, this.i18n.progressPreparing, 0, totalBytes);
 
     const results = new Array(totalSelected);
     const downloadErrors = [];
-    let completedCount = 0;
 
     const textQueue = [];
     for (let sIdx = 0; sIdx < totalSelected; sIdx += 1) {
@@ -2243,7 +2749,8 @@ export class DomController {
           rawUrl: urls.rawUrl,
         };
         completedCount += 1;
-        this.updateGenerationProgress(completedCount, totalSelected, file.path);
+        completedBytes += file.size || 0;
+        this.updateProgress(completedCount, totalSelected, file.path, completedBytes, totalBytes);
       } else {
         textQueue.push({ sIdx, file });
       }
@@ -2262,7 +2769,7 @@ export class DomController {
         queuePointer += 1;
 
         const urls = buildGitHubUrls(owner, repo, branch, item.file.path);
-        this.updateGenerationProgress(completedCount, totalSelected, item.file.path);
+        this.updateProgress(completedCount, totalSelected, item.file.path, completedBytes, totalBytes);
 
         const blobFallback = { owner, repo, sha: item.file.sha };
         const downloadRes = await GitHubClient.downloadFileText(urls.rawUrl, signal, blobFallback);
@@ -2298,7 +2805,8 @@ export class DomController {
         }
 
         completedCount += 1;
-        this.updateGenerationProgress(completedCount, totalSelected, item.file.path);
+        completedBytes += item.file.size || 0;
+        this.updateProgress(completedCount, totalSelected, item.file.path, completedBytes, totalBytes);
       }
     };
 
@@ -2309,8 +2817,12 @@ export class DomController {
 
     await Promise.all(workers);
 
-    const compiledText = formatConcatenatedOutput(results, this.lang, this.i18n);
+    const compiledText = await ExportWorkerClient.formatText(results, this.lang, this.i18n);
     return { compiledText, totalSelected, results, downloadErrors };
+  }
+
+  async handlePreviewClick() {
+    return this.executePreview();
   }
 
   async executePreview() {
@@ -2346,16 +2858,26 @@ export class DomController {
         lang: this.lang,
       });
     } finally {
-      if (this.dom.generationProgressContainer) {
-        this.dom.generationProgressContainer.hidden = true;
-      }
+      this.hideProgress();
       this.activeGenerationAbortController = null;
       this.updateGenerateButtonState();
     }
   }
 
+  async handleGenerateClick() {
+    return this.executeGeneration();
+  }
+
   async executeGeneration() {
     if (!this.currentRepoContext || this.currentRepoContext.selectedCount === 0) {
+      return;
+    }
+
+    const { owner, repo } = this.currentRepoContext;
+    const outputFilename = repo + '.txt';
+
+    const pickerRes = await FileDownloadAdapter.acquireSaveFileHandle(outputFilename, 'txt');
+    if (pickerRes.aborted) {
       return;
     }
 
@@ -2364,7 +2886,6 @@ export class DomController {
     }
     this.activeGenerationAbortController = new AbortController();
 
-    const { owner, repo } = this.currentRepoContext;
     this.updateGenerateButtonState();
     const generationStartTime = performance.now();
 
@@ -2375,8 +2896,7 @@ export class DomController {
         this.dom.progressStatusText.textContent = this.i18n.progressProcessing;
       }
 
-      const outputFilename = repo + '.txt';
-      FileDownloadAdapter.triggerFileDownload(compiledText, outputFilename);
+      await FileDownloadAdapter.writeToFileHandleOrDownload(pickerRes.handle, compiledText, outputFilename);
 
       const elapsedMs = Math.round(performance.now() - generationStartTime);
       const totalBytes = new TextEncoder().encode(compiledText).length;
@@ -2430,16 +2950,26 @@ export class DomController {
         lang: this.lang,
       });
     } finally {
-      if (this.dom.generationProgressContainer) {
-        this.dom.generationProgressContainer.hidden = true;
-      }
+      this.hideProgress();
       this.activeGenerationAbortController = null;
       this.updateGenerateButtonState();
     }
   }
 
+  async handleGenerateZipClick() {
+    return this.executeZipGeneration();
+  }
+
   async executeZipGeneration() {
     if (!this.currentRepoContext || this.currentRepoContext.selectedCount === 0) {
+      return;
+    }
+
+    const { owner, repo, branch, files, selectedFlags, modeFlags } = this.currentRepoContext;
+    const outputFilename = repo + '.zip';
+
+    const pickerRes = await FileDownloadAdapter.acquireSaveFileHandle(outputFilename, 'zip');
+    if (pickerRes.aborted) {
       return;
     }
 
@@ -2449,8 +2979,6 @@ export class DomController {
     this.activeGenerationAbortController = new AbortController();
     const signal = this.activeGenerationAbortController.signal;
 
-    const { owner, repo, branch, files, selectedFlags, modeFlags } = this.currentRepoContext;
-
     const selectedFileIndices = [];
     for (let i = 0; i < files.length; i += 1) {
       if (selectedFlags[i] === 1) {
@@ -2459,15 +2987,22 @@ export class DomController {
     }
 
     const totalSelected = selectedFileIndices.length;
+    let totalBytes = 0;
+    for (let i = 0; i < totalSelected; i += 1) {
+      const fileIdx = selectedFileIndices[i];
+      totalBytes += files[fileIdx].size || 0;
+    }
+
+    let completedCount = 0;
+    let completedBytes = 0;
     this.updateGenerateButtonState();
 
     const generationStartTime = performance.now();
-    this.updateGenerationProgress(0, totalSelected, this.i18n.progressPreparing);
+    this.showProgress(0, totalSelected, this.i18n.progressPreparing, 0, totalBytes);
 
-    const zipBuilder = new ZipBuilder();
+    const zipEntries = [];
     const downloadErrors = [];
     const refResults = [];
-    let completedCount = 0;
 
     const scrapQueue = [];
     for (let sIdx = 0; sIdx < totalSelected; sIdx += 1) {
@@ -2486,7 +3021,8 @@ export class DomController {
           rawUrl: urls.rawUrl,
         });
         completedCount += 1;
-        this.updateGenerationProgress(completedCount, totalSelected, file.path);
+        completedBytes += file.size || 0;
+        this.updateProgress(completedCount, totalSelected, file.path, completedBytes, totalBytes);
       } else {
         scrapQueue.push(file);
       }
@@ -2506,7 +3042,7 @@ export class DomController {
           queuePointer += 1;
 
           const urls = buildGitHubUrls(owner, repo, branch, file.path);
-          this.updateGenerationProgress(completedCount, totalSelected, file.path);
+          this.updateProgress(completedCount, totalSelected, file.path, completedBytes, totalBytes);
 
           const blobFallback = { owner, repo, sha: file.sha };
           const downloadRes = await GitHubClient.downloadFileBinary(urls.rawUrl, signal, blobFallback);
@@ -2522,11 +3058,12 @@ export class DomController {
               rawUrl: urls.rawUrl,
             });
           } else {
-            await zipBuilder.addFile(file.path, downloadRes.content);
+            zipEntries.push({ path: file.path, data: downloadRes.content });
           }
 
           completedCount += 1;
-          this.updateGenerationProgress(completedCount, totalSelected, file.path);
+          completedBytes += file.size || 0;
+          this.updateProgress(completedCount, totalSelected, file.path, completedBytes, totalBytes);
         }
       };
 
@@ -2539,19 +3076,19 @@ export class DomController {
 
       if (refResults.length > 0) {
         const refFilename = this.lang === 'en' ? 'REFERENCES.txt' : 'REFERENCIAS.txt';
-        const compiledRefsText = formatConcatenatedOutput(refResults, this.lang, this.i18n);
+        const compiledRefsText = await ExportWorkerClient.formatText(refResults, this.lang, this.i18n);
         const refBytes = new TextEncoder().encode(compiledRefsText);
-        await zipBuilder.addFile(refFilename, refBytes);
+        zipEntries.push({ path: refFilename, data: refBytes });
       }
 
       if (this.dom.progressStatusText) {
         this.dom.progressStatusText.textContent = this.i18n.progressProcessing;
       }
 
-      const zipBlob = zipBuilder.buildBlob();
-      const outputFilename = repo + '.zip';
+      const zipBytes = await ExportWorkerClient.encodeZip(zipEntries);
+      const zipBlob = new Blob([zipBytes], { type: 'application/zip' });
 
-      FileDownloadAdapter.triggerFileDownload(zipBlob, outputFilename);
+      await FileDownloadAdapter.writeToFileHandleOrDownload(pickerRes.handle, zipBlob, outputFilename);
 
       const elapsedMs = Math.round(performance.now() - generationStartTime);
       const formattedSize = formatFileSize(zipBlob.size, this.lang);
@@ -2595,9 +3132,7 @@ export class DomController {
         lang: this.lang,
       });
     } finally {
-      if (this.dom.generationProgressContainer) {
-        this.dom.generationProgressContainer.hidden = true;
-      }
+      this.hideProgress();
       this.activeGenerationAbortController = null;
       this.updateGenerateButtonState();
     }

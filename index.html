@@ -3,7 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0d1117">
   <title>GitHub Scrap</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="apple-touch-icon" href="favicon.svg">
+  <link rel="manifest" href="manifest.json">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -30,6 +34,10 @@
         <span class="token-icon" aria-hidden="true">🔑</span>
         <span id="token-button-label">Token</span>
         <span id="rate-limit-badge" class="rate-limit-badge" hidden></span>
+      </button>
+      <button type="button" id="install-pwa-button" class="btn-secondary install-pwa-button hidden" title="Instalar aplicativo GitHub Scrap no dispositivo" hidden>
+        <span class="install-pwa-icon" aria-hidden="true">📲</span>
+        <span id="install-pwa-label">Instalar App</span>
       </button>
     </form>
     <div id="search-progress-bar" class="search-progress-bar" hidden>
@@ -79,6 +87,8 @@
           </div>
           <span id="filter-feedback" class="filter-feedback" aria-live="polite"></span>
         </div>
+
+        <div id="extension-chips-bar" class="extension-chips-bar hidden" role="toolbar" aria-label="Filtrar seleção por extensão de arquivo" hidden></div>
       </header>
 
       <div class="file-list-header" id="file-list-header">
@@ -116,9 +126,9 @@
         </div>
       </div>
       <div class="generation-buttons-row">
-        <button type="button" id="generate-button" class="generate-button generate-btn-txt" disabled>Gerar TXT</button>
-        <button type="button" id="generate-zip-button" class="generate-button generate-btn-zip" disabled>Gerar ZIP</button>
-        <button type="button" id="preview-button" class="generate-button generate-btn-preview" disabled>Visualizar / Copiar</button>
+        <button type="button" id="generate-button" class="generate-button generate-btn-txt" title="Gerar arquivo TXT compilado (Atalho: Ctrl+Shift+S / Cmd+Shift+S)" disabled>Gerar TXT</button>
+        <button type="button" id="generate-zip-button" class="generate-button generate-btn-zip" title="Gerar arquivo ZIP com arquivos selecionados (Atalho: Ctrl+Shift+Z / Cmd+Shift+Z)" disabled>Gerar ZIP</button>
+        <button type="button" id="preview-button" class="generate-button generate-btn-preview" title="Visualizar ou copiar conteúdo compilado (Atalho: Ctrl+Shift+P / Cmd+Shift+P)" disabled>Visualizar / Copiar</button>
       </div>
     </div>
   </footer>

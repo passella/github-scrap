@@ -1,0 +1,5 @@
+theme: jekyll-theme-midnight
+title: GitHub Scrap
+description: Explore, select, and extract source code from GitHub repositories into a single .txt or .zip directly in the browser.
+url: https://passella.github.io
+baseurl: /github-scrap

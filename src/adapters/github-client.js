@@ -1,5 +1,6 @@
 import { TRANSLATIONS } from './i18n.js';
 import { StorageAdapter } from './storage-adapter.js';
+import { TreeCacheAdapter } from './tree-cache-adapter.js';
 
 export function decodeBase64ToUint8Array(base64Str) {
   if (!base64Str || typeof base64Str !== 'string') {
@@ -33,8 +34,11 @@ export class GitHubClient {
     return () => this.rateLimitListeners.delete(listener);
   }
 
-  static notifyRateLimitChange(rateLimit) {
+  static notifyRateLimitChange(rateLimit, { fromSync = false } = {}) {
     this.lastRateLimit = rateLimit;
+    if (!fromSync && rateLimit) {
+      StorageAdapter.setLastRateLimit(rateLimit, { broadcast: true });
+    }
     for (const listener of this.rateLimitListeners) {
       try {
         listener(rateLimit);
@@ -132,6 +136,17 @@ export class GitHubClient {
       };
     }
 
+    const idbCached = await TreeCacheAdapter.get(cacheKey, { allowExpired: false });
+    if (idbCached && idbCached.data) {
+      this.setSessionCache(cacheKey, idbCached.data);
+      return {
+        ok: true,
+        data: idbCached.data,
+        endpoint: 'Cache (IndexedDB)',
+        rateLimit: this.lastRateLimit,
+      };
+    }
+
     const endpoint = 'https://api.github.com/repos/' + encodeURIComponent(owner) + '/' + encodeURIComponent(repo);
     let response = null;
 
@@ -142,6 +157,16 @@ export class GitHubClient {
       });
     } catch (networkError) {
       if (networkError.name === 'AbortError') throw networkError;
+      const offlineSnapshot = await TreeCacheAdapter.get(cacheKey, { allowExpired: true });
+      if (offlineSnapshot && offlineSnapshot.data) {
+        return {
+          ok: true,
+          data: offlineSnapshot.data,
+          endpoint: 'Offline Cache (IndexedDB)',
+          rateLimit: this.lastRateLimit,
+          offlineFallback: true,
+        };
+      }
       return {
         ok: false,
         status: 'Network Failure / Offline',
@@ -181,6 +206,7 @@ export class GitHubClient {
 
     const data = await response.json();
     this.setSessionCache(cacheKey, data);
+    await TreeCacheAdapter.set(cacheKey, data);
     return {
       ok: true,
       data,
@@ -202,6 +228,17 @@ export class GitHubClient {
       };
     }
 
+    const idbCached = await TreeCacheAdapter.get(cacheKey, { allowExpired: false });
+    if (idbCached && idbCached.data) {
+      this.setSessionCache(cacheKey, idbCached.data);
+      return {
+        ok: true,
+        data: idbCached.data,
+        endpoint: 'Cache (IndexedDB)',
+        rateLimit: this.lastRateLimit,
+      };
+    }
+
     const endpoint = 'https://api.github.com/repos/' + encodeURIComponent(owner) + '/' + encodeURIComponent(repo) + '/branches?per_page=100';
     let response = null;
 
@@ -212,6 +249,16 @@ export class GitHubClient {
       });
     } catch (networkError) {
       if (networkError.name === 'AbortError') throw networkError;
+      const offlineSnapshot = await TreeCacheAdapter.get(cacheKey, { allowExpired: true });
+      if (offlineSnapshot && Array.isArray(offlineSnapshot.data)) {
+        return {
+          ok: true,
+          data: offlineSnapshot.data,
+          endpoint: 'Offline Cache (IndexedDB)',
+          rateLimit: this.lastRateLimit,
+          offlineFallback: true,
+        };
+      }
       return {
         ok: false,
         status: 'Network Failure / Offline',
@@ -247,12 +294,17 @@ export class GitHubClient {
     const data = await response.json();
     const branchesArray = Array.isArray(data) ? data : [];
     this.setSessionCache(cacheKey, branchesArray);
+    await TreeCacheAdapter.set(cacheKey, branchesArray);
     return {
       ok: true,
       data: branchesArray,
       endpoint,
       rateLimit,
     };
+  }
+
+  static async fetchRepositoryBranches(owner, repo, signal, lang = 'en') {
+    return this.fetchBranches(owner, repo, signal, lang);
   }
 
   static async fetchGitTrees(owner, repo, branch, signal, lang = 'en') {
@@ -268,6 +320,17 @@ export class GitHubClient {
       };
     }
 
+    const idbCached = await TreeCacheAdapter.get(cacheKey, { allowExpired: false });
+    if (idbCached && idbCached.data) {
+      this.setSessionCache(cacheKey, idbCached.data);
+      return {
+        ok: true,
+        data: idbCached.data,
+        endpoint: 'Cache (IndexedDB)',
+        rateLimit: this.lastRateLimit,
+      };
+    }
+
     const encodedBranch = encodeURIComponent(branch);
     const endpoint = 'https://api.github.com/repos/' + encodeURIComponent(owner) + '/' + encodeURIComponent(repo) + '/git/trees/' + encodedBranch + '?recursive=1';
     let response = null;
@@ -279,6 +342,16 @@ export class GitHubClient {
       });
     } catch (networkError) {
       if (networkError.name === 'AbortError') throw networkError;
+      const offlineSnapshot = await TreeCacheAdapter.get(cacheKey, { allowExpired: true });
+      if (offlineSnapshot && offlineSnapshot.data) {
+        return {
+          ok: true,
+          data: offlineSnapshot.data,
+          endpoint: 'Offline Cache (IndexedDB)',
+          rateLimit: this.lastRateLimit,
+          offlineFallback: true,
+        };
+      }
       return {
         ok: false,
         status: 'Network Failure / Offline',
@@ -318,12 +391,17 @@ export class GitHubClient {
 
     const data = await response.json();
     this.setSessionCache(cacheKey, data);
+    await TreeCacheAdapter.set(cacheKey, data);
     return {
       ok: true,
       data,
       endpoint,
       rateLimit,
     };
+  }
+
+  static async fetchRepositoryTree(owner, repo, branch, signal, lang = 'en') {
+    return this.fetchGitTrees(owner, repo, branch, signal, lang);
   }
 
   static async downloadFileText(rawUrl, signal, blobFallback = null) {
@@ -425,6 +503,58 @@ export class GitHubClient {
         content: null,
       };
     }
+  }
+
+  static async fetchMultipleFiles(filesWithUrls, { concurrency = 6, signal, onProgress, binary = false } = {}) {
+    const totalFiles = filesWithUrls.length;
+    let totalBytes = 0;
+    for (let i = 0; i < totalFiles; i += 1) {
+      totalBytes += filesWithUrls[i].size || 0;
+    }
+
+    let completedFiles = 0;
+    let completedBytes = 0;
+    let pointer = 0;
+    const results = new Array(totalFiles);
+
+    if (typeof onProgress === 'function') {
+      onProgress({ completedFiles: 0, totalFiles, completedBytes: 0, totalBytes, currentPath: '' });
+    }
+
+    const worker = async () => {
+      while (pointer < filesWithUrls.length) {
+        if (signal && signal.aborted) {
+          throw new DOMException('Aborted', 'AbortError');
+        }
+        const index = pointer;
+        pointer += 1;
+        const item = filesWithUrls[index];
+
+        if (typeof onProgress === 'function') {
+          onProgress({ completedFiles, totalFiles, completedBytes, totalBytes, currentPath: item.path });
+        }
+
+        const res = binary
+          ? await this.downloadFileBinary(item.rawUrl, signal, item.blobFallback)
+          : await this.downloadFileText(item.rawUrl, signal, item.blobFallback);
+
+        results[index] = { item, res };
+        completedFiles += 1;
+        completedBytes += item.size || 0;
+
+        if (typeof onProgress === 'function') {
+          onProgress({ completedFiles, totalFiles, completedBytes, totalBytes, currentPath: item.path });
+        }
+      }
+    };
+
+    const workers = [];
+    const poolSize = Math.min(concurrency, totalFiles);
+    for (let w = 0; w < poolSize; w += 1) {
+      workers.push(worker());
+    }
+    await Promise.all(workers);
+    return results;
   }
 
   static async validateGithubToken(token, options = {}) {
