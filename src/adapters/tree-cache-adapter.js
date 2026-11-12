@@ -226,6 +226,95 @@ export class TreeCacheAdapter {
     }
   }
 
+  static async delete(key) {
+    if (!key) return false;
+    memoryFallbackStore.delete(key);
+    if (typeof sessionStorage !== 'undefined') {
+      try {
+        sessionStorage.removeItem(key);
+        sessionStorage.removeItem(FALLBACK_PREFIX + key);
+      } catch {
+      }
+    }
+    const db = await this.openDatabase();
+    if (!db) {
+      return true;
+    }
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        store.delete(key);
+        tx.oncomplete = () => resolve(true);
+        tx.onerror = () => resolve(false);
+      } catch {
+        resolve(false);
+      }
+    });
+  }
+
+  static async deleteTree(owner, repo, branch) {
+    return this.delete(this.getTreeKey(owner, repo, branch));
+  }
+
+  static async deleteRepo(owner, repo) {
+    const repoKey = this.getRepoKey(owner, repo);
+    const branchesKey = this.getBranchesKey(owner, repo);
+    await this.delete(repoKey);
+    await this.delete(branchesKey);
+
+    const treePrefix = 'github-scrap:cache:tree:' + owner + '/' + repo + '@';
+    const fallbackTreePrefix = FALLBACK_PREFIX + treePrefix;
+
+    for (const key of Array.from(memoryFallbackStore.keys())) {
+      if (key.startsWith(treePrefix) || key === repoKey || key === branchesKey) {
+        memoryFallbackStore.delete(key);
+      }
+    }
+
+    if (typeof sessionStorage !== 'undefined') {
+      try {
+        const toRemove = [];
+        for (let i = 0; i < sessionStorage.length; i += 1) {
+          const k = sessionStorage.key(i);
+          if (k && (k === repoKey || k === branchesKey || k.startsWith(treePrefix) || k.startsWith(fallbackTreePrefix))) {
+            toRemove.push(k);
+          }
+        }
+        for (let i = 0; i < toRemove.length; i += 1) {
+          sessionStorage.removeItem(toRemove[i]);
+        }
+      } catch {
+      }
+    }
+
+    const db = await this.openDatabase();
+    if (!db) return true;
+
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        const req = store.openCursor();
+        req.onsuccess = (e) => {
+          const cursor = e.target.result;
+          if (cursor) {
+            const cursorKey = cursor.key;
+            if (cursorKey === repoKey || cursorKey === branchesKey || (typeof cursorKey === 'string' && cursorKey.startsWith(treePrefix))) {
+              cursor.delete();
+            }
+            cursor.continue();
+          } else {
+            resolve(true);
+          }
+        };
+        req.onerror = () => resolve(false);
+      } catch {
+        resolve(false);
+      }
+    });
+  }
+
   static async clear() {
     memoryFallbackStore.clear();
     if (typeof sessionStorage !== 'undefined') {
@@ -233,7 +322,7 @@ export class TreeCacheAdapter {
         const keysToRemove = [];
         for (let i = 0; i < sessionStorage.length; i += 1) {
           const k = sessionStorage.key(i);
-          if (k && k.startsWith(FALLBACK_PREFIX)) {
+          if (k && (k.startsWith(FALLBACK_PREFIX) || k.startsWith('github-scrap:cache:'))) {
             keysToRemove.push(k);
           }
         }

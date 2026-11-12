@@ -123,28 +123,39 @@ export class GitHubClient {
     return parsed;
   }
 
-  static async fetchRepoDetails(owner, repo, signal, lang = 'en') {
+  static async fetchRepoDetails(owner, repo, signal, lang = 'en', { bypassCache = false } = {}) {
     const i18n = TRANSLATIONS[lang] || TRANSLATIONS['en'];
     const cacheKey = 'github-scrap:cache:repo:' + owner + '/' + repo;
-    const cachedData = this.getSessionCache(cacheKey);
-    if (cachedData) {
-      return {
-        ok: true,
-        data: cachedData,
-        endpoint: 'Cache (sessionStorage)',
-        rateLimit: this.lastRateLimit,
-      };
-    }
 
-    const idbCached = await TreeCacheAdapter.get(cacheKey, { allowExpired: false });
-    if (idbCached && idbCached.data) {
-      this.setSessionCache(cacheKey, idbCached.data);
-      return {
-        ok: true,
-        data: idbCached.data,
-        endpoint: 'Cache (IndexedDB)',
-        rateLimit: this.lastRateLimit,
-      };
+    if (bypassCache) {
+      if (typeof sessionStorage !== 'undefined') {
+        try {
+          sessionStorage.removeItem(cacheKey);
+        } catch {
+        }
+      }
+      await TreeCacheAdapter.delete(cacheKey);
+    } else {
+      const cachedData = this.getSessionCache(cacheKey);
+      if (cachedData) {
+        return {
+          ok: true,
+          data: cachedData,
+          endpoint: 'Cache (sessionStorage)',
+          rateLimit: this.lastRateLimit,
+        };
+      }
+
+      const idbCached = await TreeCacheAdapter.get(cacheKey, { allowExpired: false });
+      if (idbCached && idbCached.data) {
+        this.setSessionCache(cacheKey, idbCached.data);
+        return {
+          ok: true,
+          data: idbCached.data,
+          endpoint: 'Cache (IndexedDB)',
+          rateLimit: this.lastRateLimit,
+        };
+      }
     }
 
     const endpoint = 'https://api.github.com/repos/' + encodeURIComponent(owner) + '/' + encodeURIComponent(repo);
@@ -215,28 +226,39 @@ export class GitHubClient {
     };
   }
 
-  static async fetchBranches(owner, repo, signal, lang = 'en') {
+  static async fetchBranches(owner, repo, signal, lang = 'en', { bypassCache = false } = {}) {
     const i18n = TRANSLATIONS[lang] || TRANSLATIONS['en'];
     const cacheKey = 'github-scrap:cache:branches:' + owner + '/' + repo;
-    const cachedData = this.getSessionCache(cacheKey);
-    if (cachedData) {
-      return {
-        ok: true,
-        data: cachedData,
-        endpoint: 'Cache (sessionStorage)',
-        rateLimit: this.lastRateLimit,
-      };
-    }
 
-    const idbCached = await TreeCacheAdapter.get(cacheKey, { allowExpired: false });
-    if (idbCached && idbCached.data) {
-      this.setSessionCache(cacheKey, idbCached.data);
-      return {
-        ok: true,
-        data: idbCached.data,
-        endpoint: 'Cache (IndexedDB)',
-        rateLimit: this.lastRateLimit,
-      };
+    if (bypassCache) {
+      if (typeof sessionStorage !== 'undefined') {
+        try {
+          sessionStorage.removeItem(cacheKey);
+        } catch {
+        }
+      }
+      await TreeCacheAdapter.delete(cacheKey);
+    } else {
+      const cachedData = this.getSessionCache(cacheKey);
+      if (cachedData) {
+        return {
+          ok: true,
+          data: cachedData,
+          endpoint: 'Cache (sessionStorage)',
+          rateLimit: this.lastRateLimit,
+        };
+      }
+
+      const idbCached = await TreeCacheAdapter.get(cacheKey, { allowExpired: false });
+      if (idbCached && idbCached.data) {
+        this.setSessionCache(cacheKey, idbCached.data);
+        return {
+          ok: true,
+          data: idbCached.data,
+          endpoint: 'Cache (IndexedDB)',
+          rateLimit: this.lastRateLimit,
+        };
+      }
     }
 
     const endpoint = 'https://api.github.com/repos/' + encodeURIComponent(owner) + '/' + encodeURIComponent(repo) + '/branches?per_page=100';
@@ -303,32 +325,43 @@ export class GitHubClient {
     };
   }
 
-  static async fetchRepositoryBranches(owner, repo, signal, lang = 'en') {
-    return this.fetchBranches(owner, repo, signal, lang);
+  static async fetchRepositoryBranches(owner, repo, signal, lang = 'en', options = {}) {
+    return this.fetchBranches(owner, repo, signal, lang, options);
   }
 
-  static async fetchGitTrees(owner, repo, branch, signal, lang = 'en') {
+  static async fetchGitTrees(owner, repo, branch, signal, lang = 'en', { bypassCache = false } = {}) {
     const i18n = TRANSLATIONS[lang] || TRANSLATIONS['en'];
     const cacheKey = 'github-scrap:cache:tree:' + owner + '/' + repo + '@' + branch;
-    const cachedData = this.getSessionCache(cacheKey);
-    if (cachedData) {
-      return {
-        ok: true,
-        data: cachedData,
-        endpoint: 'Cache (sessionStorage)',
-        rateLimit: this.lastRateLimit,
-      };
-    }
 
-    const idbCached = await TreeCacheAdapter.get(cacheKey, { allowExpired: false });
-    if (idbCached && idbCached.data) {
-      this.setSessionCache(cacheKey, idbCached.data);
-      return {
-        ok: true,
-        data: idbCached.data,
-        endpoint: 'Cache (IndexedDB)',
-        rateLimit: this.lastRateLimit,
-      };
+    if (bypassCache) {
+      if (typeof sessionStorage !== 'undefined') {
+        try {
+          sessionStorage.removeItem(cacheKey);
+        } catch {
+        }
+      }
+      await TreeCacheAdapter.deleteTree(owner, repo, branch);
+    } else {
+      const cachedData = this.getSessionCache(cacheKey);
+      if (cachedData) {
+        return {
+          ok: true,
+          data: cachedData,
+          endpoint: 'Cache (sessionStorage)',
+          rateLimit: this.lastRateLimit,
+        };
+      }
+
+      const idbCached = await TreeCacheAdapter.get(cacheKey, { allowExpired: false });
+      if (idbCached && idbCached.data) {
+        this.setSessionCache(cacheKey, idbCached.data);
+        return {
+          ok: true,
+          data: idbCached.data,
+          endpoint: 'Cache (IndexedDB)',
+          rateLimit: this.lastRateLimit,
+        };
+      }
     }
 
     const encodedBranch = encodeURIComponent(branch);
@@ -400,8 +433,8 @@ export class GitHubClient {
     };
   }
 
-  static async fetchRepositoryTree(owner, repo, branch, signal, lang = 'en') {
-    return this.fetchGitTrees(owner, repo, branch, signal, lang);
+  static async fetchRepositoryTree(owner, repo, branch, signal, lang = 'en', options = {}) {
+    return this.fetchGitTrees(owner, repo, branch, signal, lang, options);
   }
 
   static async downloadFileText(rawUrl, signal, blobFallback = null) {

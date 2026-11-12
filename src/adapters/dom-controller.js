@@ -522,7 +522,7 @@ export function applyStaticTranslations(dom, lang) {
     dom.tokenProfilesTitle.textContent = i18n.tokenProfilesTitle;
   }
 
-  const tokenBackupTitle = document.querySelector('#token-backup-title');
+  const tokenBackupTitle = typeof document !== 'undefined' ? document.querySelector('#token-backup-title') : null;
   if (tokenBackupTitle) tokenBackupTitle.textContent = i18n.tokenBackupTitle;
 
   if (dom.tokenBackupPassword) {
@@ -539,6 +539,16 @@ export function applyStaticTranslations(dom, lang) {
 
   if (dom.branchSelect) {
     dom.branchSelect.setAttribute('aria-label', i18n.branchSelectAria);
+  }
+
+  const refreshBtn = dom.refreshRepoButton || (typeof document !== 'undefined' ? document.querySelector('#refresh-repo-btn') : null);
+  if (refreshBtn) {
+    const refreshText = typeof refreshBtn.querySelector === 'function' ? refreshBtn.querySelector('#refresh-repo-text') : null;
+    if (refreshText) {
+      refreshText.textContent = i18n.refreshBtn;
+    }
+    refreshBtn.title = i18n.refreshBtnTitle;
+    refreshBtn.setAttribute('aria-label', i18n.refreshBtnAria);
   }
 
   if (dom.truncatedWarning) {
@@ -594,6 +604,7 @@ export class DomController {
     this.matchingIndices = [];
     this.currentMatchPointer = -1;
     this.deferredInstallPrompt = null;
+    this.isRefreshing = false;
     this.lang = detectLanguage();
     this.i18n = TRANSLATIONS[this.lang] || TRANSLATIONS['en'];
   }
@@ -783,6 +794,13 @@ export class DomController {
       this.dom.branchSelect.addEventListener('change', (e) => this.handleBranchChange(e));
     }
 
+    const refreshBtn = this.dom.refreshRepoButton || (typeof document !== 'undefined' ? document.querySelector('#refresh-repo-btn') : null);
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', () => {
+        this.handleRefreshClick();
+      });
+    }
+
     if (this.dom.fileList) {
       this.dom.fileList.addEventListener('change', (e) => this.handleFileListChange(e));
       this.dom.fileList.addEventListener('click', (e) => this.handleFileListClick(e));
@@ -887,10 +905,23 @@ export class DomController {
   }
 
   handleGlobalKeyDown(e) {
-    if (!e || !(e.ctrlKey || e.metaKey) || !e.key) return;
+    if (!e || !e.key) return;
     const keyLower = e.key.toLowerCase();
 
+    if (e.altKey && keyLower === 'r') {
+      if (typeof e.preventDefault === 'function') e.preventDefault();
+      this.handleRefreshClick();
+      return;
+    }
+
+    if (!(e.ctrlKey || e.metaKey)) return;
+
     if (e.shiftKey) {
+      if (keyLower === 'r') {
+        if (typeof e.preventDefault === 'function') e.preventDefault();
+        this.handleRefreshClick();
+        return;
+      }
       if (keyLower === 's') {
         const btn = this.dom.generateButton;
         const canRun = btn ? !btn.disabled : Boolean(this.currentRepoContext && this.currentRepoContext.selectedCount > 0 && !this.activeGenerationAbortController);
@@ -1542,6 +1573,103 @@ export class DomController {
     }
     if (isLoading && this.dom.statusContainer) {
       this.dom.statusContainer.replaceChildren();
+    }
+  }
+
+  setRefreshLoading(isLoading) {
+    this.isRefreshing = Boolean(isLoading);
+    if (this.dom.searchProgressBar) {
+      this.dom.searchProgressBar.hidden = !isLoading;
+    }
+    const btn = this.dom.refreshRepoButton || (typeof document !== 'undefined' ? document.querySelector('#refresh-repo-btn') : null);
+    if (!btn) return;
+    btn.disabled = Boolean(isLoading);
+    if (isLoading) {
+      btn.classList.add('loading');
+      btn.setAttribute('aria-busy', 'true');
+    } else {
+      btn.classList.remove('loading');
+      btn.removeAttribute('aria-busy');
+    }
+  }
+
+  async handleRefreshClick() {
+    if (!this.currentRepoContext) return;
+    if (this.isRefreshing) return;
+
+    const { owner, repo, branch } = this.currentRepoContext;
+    if (!owner || !repo || !branch) return;
+
+    if (this.activeGenerationAbortController) {
+      this.activeGenerationAbortController.abort();
+      this.activeGenerationAbortController = null;
+    }
+
+    if (this.activeSearchAbortController) {
+      this.activeSearchAbortController.abort();
+    }
+    this.activeSearchAbortController = new AbortController();
+    const signal = this.activeSearchAbortController.signal;
+
+    this.setRefreshLoading(true);
+    const refreshStartTime = performance.now();
+
+    try {
+      const [treeResult, branchesResult] = await Promise.all([
+        GitHubClient.fetchGitTrees(owner, repo, branch, signal, this.lang, { bypassCache: true }),
+        GitHubClient.fetchBranches(owner, repo, signal, this.lang, { bypassCache: true }),
+      ]);
+
+      if (!treeResult.ok) {
+        ToastNotificationAdapter.showError({
+          title: this.i18n.toastRefreshErrorTitle || 'Erro ao atualizar repositório',
+          friendlyMessage: treeResult.friendlyMessage,
+          operation: 'GitHub Git Trees API (Bypass Cache)',
+          target: owner + '/' + repo + ' (' + branch + ')',
+          endpoint: treeResult.endpoint,
+          status: treeResult.status,
+          apiMessage: treeResult.apiMessage,
+          rateLimit: treeResult.rateLimit,
+          lang: this.lang,
+        });
+        return;
+      }
+
+      let branchNames = [];
+      if (branchesResult.ok && Array.isArray(branchesResult.data) && branchesResult.data.length > 0) {
+        branchNames = branchesResult.data.map((b) => b.name);
+      }
+      if (!branchNames.includes(branch)) {
+        branchNames.unshift(branch);
+      }
+      this.populateBranchSelect(branchNames, branch);
+
+      const durationMs = Math.round(performance.now() - refreshStartTime);
+      this.renderFiles(owner, repo, branch, treeResult.data.tree, Boolean(treeResult.data.truncated), durationMs);
+
+      const totalFiles = Array.isArray(treeResult.data.tree) ? treeResult.data.tree.filter((i) => i.type === 'blob').length : 0;
+      ToastNotificationAdapter.showSuccess(
+        this.i18n.toastRefreshSuccessTitle,
+        this.i18n.toastRefreshSuccessMessage(branch, totalFiles)
+      );
+    } catch (err) {
+      if (err.name === 'AbortError') return;
+      const genericMsg = err.message || this.i18n.errGenericUnexpected;
+      ToastNotificationAdapter.showError({
+        title: this.i18n.toastRefreshErrorTitle || 'Erro ao atualizar repositório',
+        friendlyMessage: genericMsg,
+        operation: 'Refresh Pipeline',
+        target: owner + '/' + repo,
+        endpoint: 'N/A',
+        status: 'Client Exception',
+        apiMessage: err.stack || err.message,
+        rateLimit: null,
+        lang: this.lang,
+      });
+    } finally {
+      if (!signal.aborted) {
+        this.setRefreshLoading(false);
+      }
     }
   }
 

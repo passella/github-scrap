@@ -42,6 +42,7 @@ if (typeof document !== 'undefined') {
       resultsSection: document.querySelector('#results-section'),
       repoTitle: document.querySelector('#repo-title'),
       branchSelect: document.querySelector('#branch-select'),
+      refreshRepoButton: document.querySelector('#refresh-repo-btn'),
       fileCount: document.querySelector('#file-count'),
       selectionSummary: document.querySelector('#selection-summary'),
       truncatedWarning: document.querySelector('#truncated-warning'),
